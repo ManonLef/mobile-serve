@@ -22,12 +22,14 @@
     ]
   },
   "scripts": {
-    "build": "esbuild src/extension.ts --bundle --platform=node --format=cjs --target=node18 --external:vscode --outfile=dist/extension.js",
-    "build:debug": "npm run build -- --sourcemap",
-    "watch": "npm run build:debug -- --watch",
+    "bundle": "esbuild src/extension.ts --bundle --platform=node --format=cjs --target=node18 --external:vscode --metafile=dist/meta.json --outfile=dist/extension.js",
+    "notices": "node scripts/notices.ts",
+    "build": "npm run bundle && npm run notices",
+    "build:debug": "npm run bundle -- --sourcemap && npm run notices",
+    "watch": "npm run bundle -- --sourcemap --watch",
     "check": "tsc",
     "test": "node --test \"test/*.test.ts\"",
-    "vscode:prepublish": "npm run check && npm test && npm run build -- --minify"
+    "vscode:prepublish": "npm run check && npm test && npm run bundle -- --minify && npm run notices"
   },
   "dependencies": { "qrcode": "1.5.4" },
   "devDependencies": {

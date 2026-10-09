@@ -76,6 +76,13 @@ Avoid doing this on public or untrusted Wi-Fi, and stop the server when you're d
 In Restricted Mode (untrusted workspaces) the extension won't restart servers for you, because
 that runs scripts from the project's `package.json`.
 
+## Licenses
+
+Mobile Serve is MIT-licensed. The packages bundled into the extension are listed with their licenses
+in `dist/THIRD_PARTY_NOTICES.txt`, which the build generates.
+
+"QR Code" is a registered trademark of DENSO WAVE INCORPORATED.
+
 ## Development
 
 Needs Node.js 22.18 or newer. Run `npm install`, then:
