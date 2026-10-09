@@ -1,6 +1,7 @@
 import * as vscode from 'vscode';
 import { toDataURL } from 'qrcode';
-import { SHOW_COMMAND, STOP_COMMAND } from './commands.ts';
+import { SHOW_COMMAND, SHOW_LOG_COMMAND, STOP_COMMAND } from './commands.ts';
+import { describe, log, setLogger } from './log.ts';
 import { realPath } from './paths.ts';
 import { findDevServers, LSOF_MISSING, type DevServer } from './servers.ts';
 import { getLanAddresses, probe } from './network.ts';
@@ -180,18 +181,26 @@ function updateStatusBar(item: vscode.StatusBarItem): void {
   item.backgroundColor = new vscode.ThemeColor('statusBarItem.warningBackground');
 }
 
-// Runs a command, showing any error it ends with.
+// Runs a command, showing any error it ends with, with a way to the log for reporting it.
 function reportingErrors(run: () => Promise<void>): () => Promise<void> {
   return async () => {
     try {
       await run();
     } catch (err) {
-      vscode.window.showErrorMessage(`Mobile Serve: ${err instanceof Error ? err.message : String(err)}`);
+      log.error(err instanceof Error ? err : describe(err));
+      const showLog = 'Show Log';
+      if (await vscode.window.showErrorMessage(`Mobile Serve: ${describe(err)}`, showLog) === showLog) {
+        await vscode.commands.executeCommand(SHOW_LOG_COMMAND);
+      }
     }
   };
 }
 
 export function activate(context: vscode.ExtensionContext): void {
+  // First, so picking up shares from the last session is logged too.
+  const output = vscode.window.createOutputChannel('Mobile Serve', { log: true });
+  setLogger(output);
+  context.subscriptions.push(output, { dispose: () => setLogger(undefined) });
   registerSharing(context);
   const item = vscode.window.createStatusBarItem('mobileServe.status', vscode.StatusBarAlignment.Right, 100);
   item.name = 'Mobile Serve';
@@ -219,6 +228,7 @@ export function activate(context: vscode.ExtensionContext): void {
       disposePanel();
       await closeAll();
     })),
+    vscode.commands.registerCommand(SHOW_LOG_COMMAND, () => output.show()),
     { dispose: disposePanel },
   );
 }

@@ -24,7 +24,8 @@
   "contributes": {
     "commands": [
       { "command": "mobileServe.show", "title": "Show Phone URL", "category": "Mobile Serve" },
-      { "command": "mobileServe.stop", "title": "Stop Sharing on the Network", "category": "Mobile Serve" }
+      { "command": "mobileServe.stop", "title": "Stop Sharing on the Network", "category": "Mobile Serve" },
+      { "command": "mobileServe.showLog", "title": "Show Log", "category": "Mobile Serve" }
     ],
     "taskDefinitions": [
       {

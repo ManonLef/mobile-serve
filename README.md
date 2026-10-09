@@ -112,6 +112,16 @@ force quit or crashed, that happens the next time you open the workspace.
 In Restricted Mode (untrusted workspaces) the extension won't start or restart servers for you,
 because that runs scripts from the project's `package.json`. Plain HTML folders can still be served.
 
+## Reporting a problem
+
+Run **Mobile Serve: Show Log** from the Command Palette (or click **Show Log** on an error) to see
+what Mobile Serve did: the servers it found, what it started or stopped, and what went wrong. Paste it
+into an [issue](https://github.com/ManonLef/mobile-serve/issues), together with your operating system
+and how you started your project. The log contains folder paths and process IDs, so look it over
+first. It stays on your computer: Mobile Serve doesn't send anything anywhere.
+
+For more detail, run **Developer: Set Log Level…**, choose Mobile Serve and then **Debug**.
+
 ## Licenses
 
 Mobile Serve is MIT-licensed. The packages bundled into the extension are listed with their licenses
