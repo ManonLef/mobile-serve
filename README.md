@@ -100,6 +100,9 @@ Needs Node.js 22.18 or newer. Run `npm install`, then:
 - **F5** builds the extension and starts a VS Code window with it loaded.
 - `npm test` runs the unit tests. Node runs the TypeScript files directly.
 - `npm run check` type-checks the code.
+- `npm run install-dev` builds the extension and installs it into your everyday VS Code
+  (`~/.vscode/extensions`): over the installed copy if there is one, or else as `mobile-serve-dev`.
+  Run **Developer: Reload Window** afterwards.
 - `npx @vscode/vsce package` builds the `.vsix`.
 
 The source in `src/` is TypeScript using ES modules. esbuild bundles it into a single CommonJS
