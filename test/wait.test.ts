@@ -26,3 +26,13 @@ test('waitFor keeps going after a failed check', async () => {
 test('waitFor reports the error when the checks were still failing at the end', async () => {
   await assert.rejects(waitFor(sequence([false, new Error('lsof timed out')]), 30, 1), /lsof timed out/);
 });
+
+test('waitFor tells the interval how long it has been waiting', async () => {
+  const intervals: number[] = [];
+  await waitFor(sequence([false]), 40, elapsed => {
+    intervals.push(elapsed);
+    return 15;
+  });
+  assert.ok(intervals.length >= 2, String(intervals));
+  assert.ok(intervals.every((elapsed, i) => i === 0 || elapsed > intervals[i - 1]), String(intervals));
+});
