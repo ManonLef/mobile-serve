@@ -37,13 +37,16 @@ async function findWorkspaceServers(): Promise<{ servers: DevServer[]; problem?:
       // lsof reports real paths, so symlinked workspace folders have to be resolved to match.
       workspaceFolders: await Promise.all((vscode.workspace.workspaceFolders || []).map(folder => realPath(folder.uri.fsPath))),
     });
+    log.debug(`Servers found: ${servers.map(s => `${s.port} ${s.label} (pid ${s.pid}, ${s.lanReachable ? 'on the network' : 'localhost only'}, ` +
+      `${s.inProject ? 'in this project' : `from ${s.cwd ?? 'an unknown folder'}`})`).join('; ') || 'none'}.`);
     // Servers Mobile Serve started are offered through their folder instead.
     const started = new Set(currentShares().filter(s => s.kind === 'task' || s.kind === 'static').map(s => s.port));
     const inProject = servers.filter(s => s.inProject && !started.has(s.port));
     return { servers: inProject, problem: inProject.length ? undefined : 'No servers running in this project' };
   } catch (err) {
     // Starting the project or entering a port still works, so the list stays open.
-    const message = err instanceof Error ? err.message : String(err);
+    const message = describe(err);
+    log.warn(`Couldn't look for running servers: ${message}`);
     return { servers: [], problem: message === LSOF_MISSING ? message : `Couldn't look for running servers (${message})` };
   }
 }
@@ -132,6 +135,7 @@ async function pickTarget(): Promise<Target | undefined> {
 async function show(): Promise<void> {
   const addresses = await getLanAddresses();
   if (!addresses.length) {
+    log.warn('No network address found.');
     vscode.window.showErrorMessage('No network connection found. Connect to Wi-Fi and try again.');
     return;
   }
@@ -149,6 +153,7 @@ async function show(): Promise<void> {
   const { listening, https } = await probe(usable[0].address, port);
   const scheme = https ? 'https' : 'http';
   const [first, ...rest] = usable.map((a): PageUrl => ({ name: a.name, url: `${scheme}://${a.address}:${port}` }));
+  log.info(`Showing ${first.url}${listening ? '' : ', which doesn\'t answer from this computer'}.`);
   const qr = await toDataURL(first.url, { margin: 1, width: 320 });
   // A server restarted by hand since isn't Mobile Serve's to stop, which the regular check may not have noticed yet.
   await dropStoppedServers();
@@ -200,6 +205,8 @@ export function activate(context: vscode.ExtensionContext): void {
   // First, so picking up shares from the last session is logged too.
   const output = vscode.window.createOutputChannel('Mobile Serve', { log: true });
   setLogger(output);
+  log.info(`Mobile Serve ${context.extension.packageJSON.version} in VS Code ${vscode.version} on ${process.platform}` +
+    `${vscode.env.remoteName ? `, connected to ${vscode.env.remoteName}` : ''}.`);
   context.subscriptions.push(output, { dispose: () => setLogger(undefined) });
   registerSharing(context);
   const item = vscode.window.createStatusBarItem('mobileServe.status', vscode.StatusBarAlignment.Right, 100);

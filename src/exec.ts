@@ -1,5 +1,6 @@
 import { execFile } from 'node:child_process';
 import * as path from 'node:path';
+import { log } from './log.ts';
 
 const EXEC_TIMEOUT_MS = 5000;
 // Where macOS and Linux keep lsof, ps, route and ip. VS Code's PATH can leave them out (on macOS
@@ -17,6 +18,7 @@ function run(file: string, args: string[]): Promise<ExecResult | undefined> {
   return new Promise((resolve, reject) => {
     execFile(file, args, { timeout: EXEC_TIMEOUT_MS }, (err, stdout, stderr) => {
       const code = (err as NodeJS.ErrnoException | null)?.code as unknown;
+      log.debug(`${[file, ...args].join(' ')}: ${err ? code ?? err.message : 0}${stderr.trim() ? `, stderr: ${stderr.trim()}` : ''}`);
       if (!err || typeof code === 'number') resolve({ stdout, stderr, code: typeof code === 'number' ? code : 0 });
       else if (code === 'ENOENT') resolve(undefined);
       else reject(new Error(err.killed ? `${file} didn't finish within ${EXEC_TIMEOUT_MS / 1000} seconds` : `${file} failed: ${err.message}`));
@@ -36,8 +38,12 @@ export async function execOutput(file: string, args: string[], fallbackDirs = SY
   if (result || process.platform === 'win32' || file.includes('/')) return result;
   for (const dir of fallbackDirs) {
     const found = await run(path.join(dir, file), args);
-    if (found) return found;
+    if (found) {
+      log.info(`${file} isn't on VS Code's PATH, using ${path.join(dir, file)}.`);
+      return found;
+    }
   }
+  log.warn(`${file} isn't installed, or isn't on VS Code's PATH.`);
   return undefined;
 }
 

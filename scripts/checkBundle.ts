@@ -10,13 +10,15 @@ try {
   fs.mkdirSync(path.join(dir, 'dist'));
   fs.copyFileSync('dist/extension.js', path.join(dir, 'dist', 'extension.js'));
   // VS Code provides the vscode module. This stand-in has the API's top-level names (esbuild copies
-  // them when importing), each accepting any use while the bundle loads.
+  // them when importing), each accepting any use while the bundle loads, including turning it into text.
   const types = fs.readFileSync('node_modules/@types/vscode/index.d.ts', 'utf8');
   const names = [...new Set([...types.matchAll(/^\s*export (?:class|function|const|let|enum|namespace) (\w+)/gm)].map(m => m[1]))];
   const stub = path.join(dir, 'node_modules', 'vscode');
   fs.mkdirSync(stub, { recursive: true });
   fs.writeFileSync(path.join(stub, 'index.js'),
-    'const any = new Proxy(function () {}, { get: () => any, set: () => true, apply: () => any, construct: () => any });\n' +
+    'const any = new Proxy(function () {}, {\n' +
+    '  get: (_, key) => key === Symbol.toPrimitive ? () => "stub" : any, set: () => true, apply: () => any, construct: () => any,\n' +
+    '});\n' +
     `for (const name of ${JSON.stringify(names)}) exports[name] = any;\n`);
 
   const load = createRequire(path.join(dir, 'dist', 'extension.js'));

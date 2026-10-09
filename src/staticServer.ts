@@ -4,6 +4,7 @@ import * as fs from 'node:fs';
 import * as http from 'node:http';
 import { isIP, type AddressInfo } from 'node:net';
 import * as path from 'node:path';
+import { describe, log } from './log.ts';
 import { isInside } from './paths.ts';
 
 // Reserved for the reload connection. Can't clash with a file, since the folder is served as it is.
@@ -118,7 +119,10 @@ export function startStaticServer(root: string, port: number): Promise<StaticSer
   let onlyCss = true;
 
   const handle = async (req: http.IncomingMessage, res: http.ServerResponse): Promise<void> => {
-    if (!isAllowedHost(req.headers.host)) return send(res, 403, 'Open this page by its IP address');
+    if (!isAllowedHost(req.headers.host)) {
+      log.info(`Refused a request for ${req.headers.host ?? 'no host'}: the static server only answers to IP addresses and localhost.`);
+      return send(res, 403, 'Open this page by its IP address');
+    }
     if (req.method !== 'GET' && req.method !== 'HEAD') return send(res, 405, 'Method not allowed', { Allow: 'GET, HEAD' });
     const urlPath = req.url ?? '/';
     if (urlPath.split('?')[0] === RELOAD_PATH) {
@@ -172,7 +176,8 @@ export function startStaticServer(root: string, port: number): Promise<StaticSer
   };
 
   const server = http.createServer((req, res) => {
-    handle(req, res).catch(() => {
+    handle(req, res).catch(err => {
+      log.warn(`Static server: ${req.url} failed: ${describe(err)}`);
       if (!res.headersSent) send(res, 500, 'Could not read the file');
       else res.destroy();
     });
@@ -181,7 +186,10 @@ export function startStaticServer(root: string, port: number): Promise<StaticSer
   return new Promise((resolve, reject) => {
     // Fails the start when the port is taken. Kept afterwards, when rejecting does nothing: an error
     // there (too many open files, say) would otherwise be thrown in the extension host.
-    server.on('error', reject);
+    server.on('error', err => {
+      log.warn(`Static server on port ${port}: ${describe(err)}`);
+      reject(err);
+    });
     server.listen(port, () => {
       resolve({
         // The port asked for, or the one picked when that was 0.

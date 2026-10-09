@@ -1,6 +1,7 @@
 // What Mobile Serve has made reachable from the network, so "Close Mobile" can undo it.
 import * as path from 'node:path';
 import * as vscode from 'vscode';
+import { describe, log } from './log.ts';
 import { canConnect, getLanAddresses } from './network.ts';
 import { realPath } from './paths.ts';
 import { listeningPids, listensFrom } from './servers.ts';
@@ -44,6 +45,7 @@ function setShares(next: Share[]): void {
 }
 
 export function addShare(share: Share): void {
+  log.info(`Sharing port ${share.port} (${share.kind}).`);
   // One share per port: a newer one replaces what was recorded for it.
   setShares([...shares.filter(s => s.port !== share.port), share]);
 }
@@ -100,10 +102,12 @@ export async function dropStoppedServers(): Promise<void> {
     if (share.kind !== 'restarted') continue;
     try {
       if (!(await listeningPids(share.port)).includes(share.pid)) stopped.push(share);
-    } catch {
+    } catch (err) {
       // Checked again next time.
+      log.debug(`Couldn't check the restarted server on port ${share.port}: ${describe(err)}`);
     }
   }
+  for (const share of stopped) log.info(`The restarted server on port ${share.port} stopped, or was restarted by hand.`);
   // Only removes what was found stopped: shares may have been added while lsof ran.
   if (stopped.length) setShares(shares.filter(s => !stopped.includes(s)));
 }
@@ -111,7 +115,9 @@ export async function dropStoppedServers(): Promise<void> {
 // Forgets the Live Server share when its setting is no longer the one Mobile Serve wrote.
 function onConfigurationChanged(event: vscode.ConfigurationChangeEvent): void {
   if (!event.affectsConfiguration(`${LIVE_SERVER_SETTINGS}.host`) || liveServerHost() === '0.0.0.0') return;
-  if (shares.some(s => s.kind === 'liveServer')) setShares(shares.filter(s => s.kind !== 'liveServer'));
+  if (!shares.some(s => s.kind === 'liveServer')) return;
+  log.info('Live Server\'s host setting was changed, so Mobile Serve no longer puts it back.');
+  setShares(shares.filter(s => s.kind !== 'liveServer'));
 }
 
 async function closeRestarted(share: Extract<Share, { kind: 'restarted' }>): Promise<void> {
@@ -161,7 +167,10 @@ export function closeAll(): Promise<void> {
   closing ??= closeShares(shares, {
     close: closeShare,
     stillShared: share => stillShared(share, checks),
-    remove: share => setShares(shares.filter(s => s !== share)),
+    remove: share => {
+      log.info(`Stopped sharing port ${share.port}.`);
+      setShares(shares.filter(s => s !== share));
+    },
   }).finally(() => closing = undefined);
   return closing;
 }
@@ -177,7 +186,8 @@ async function closeShare(share: Share): Promise<void> {
 async function liveServerOnNetwork(port: number): Promise<boolean> {
   try {
     if (!(await listeningPids(port)).includes(process.pid)) return false;
-  } catch {
+  } catch (err) {
+    log.debug(`Couldn't check Live Server on port ${port}: ${describe(err)}`);
     return false;
   }
   const [address] = await getLanAddresses();
@@ -189,7 +199,8 @@ async function liveServerOnNetwork(port: number): Promise<boolean> {
 async function taskStillRunning(share: Extract<Share, { kind: 'task' }>): Promise<boolean> {
   try {
     return await listensFrom(share.port, await realPath(share.dir));
-  } catch {
+  } catch (err) {
+    log.debug(`Couldn't check which folder port ${share.port} runs from, so any server counts: ${describe(err)}`);
     return canConnect('127.0.0.1', share.port);
   }
 }
@@ -208,14 +219,16 @@ async function restoreShares(saved: Share[]): Promise<void> {
   const kept: Share[] = [];
   for (const share of saved) {
     const decision = await restoreDecision(share, checks);
+    log.info(`From the last session, port ${share.port} (${share.kind}): ${decision}.`);
     if (decision === 'keep') {
       kept.push(share);
     } else if (decision === 'restoreLiveServerHost' && share.kind === 'liveServer') {
       try {
         await setLiveServerHost(share.previousHost);
         vscode.window.showInformationMessage('Mobile Serve set Live Server back to this computer only: VS Code closed while it was shared on your network.');
-      } catch {
+      } catch (err) {
         // Kept, so Close Mobile still offers to undo it.
+        log.warn(`Couldn't put Live Server's host setting back: ${describe(err)}`);
         kept.push(share);
       }
     }
@@ -234,9 +247,12 @@ export function undoOnShutdown(): void {
   const location = liveServerHostLocation();
   if (!share || !location) return;
   try {
-    restoreSettingInFile(location.file, location.jsonPath, '0.0.0.0', share.previousHost);
-  } catch {
+    if (restoreSettingInFile(location.file, location.jsonPath, '0.0.0.0', share.previousHost)) {
+      log.info(`Put Live Server's host setting back in ${location.file}.`);
+    }
+  } catch (err) {
     // Undone on the next start instead.
+    log.warn(`Couldn't put Live Server's host setting back in ${location.file}: ${describe(err)}`);
   }
 }
 
@@ -250,7 +266,10 @@ export function registerSharing(context: vscode.ExtensionContext): void {
     // The task ended: stopped from here, with Ctrl+C or by closing its terminal, or the server failed.
     vscode.tasks.onDidEndTask(({ execution }) => {
       const ended = shares.filter(s => s.kind === 'task' && isOurTask(execution.task.definition, s.port));
-      for (const share of ended) taskClosers.delete(share.port);
+      for (const share of ended) {
+        log.info(`The dev server task on port ${share.port} ended.`);
+        taskClosers.delete(share.port);
+      }
       if (ended.length) setShares(shares.filter(s => !ended.includes(s)));
     }),
     {

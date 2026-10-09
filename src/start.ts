@@ -2,8 +2,9 @@
 // as a VS Code task, or the static server for a plain HTML/CSS/JS folder.
 import * as path from 'node:path';
 import * as vscode from 'vscode';
+import { log } from './log.ts';
 import { canConnect } from './network.ts';
-import { planStart, portFor, scriptArgs, type StartPlan } from './projectStart.ts';
+import { describePlan, planStart, portFor, scriptArgs, type StartPlan } from './projectStart.ts';
 import { realPath } from './paths.ts';
 import { singleFlight } from './singleFlight.ts';
 import { startStaticServer } from './staticServer.ts';
@@ -27,6 +28,7 @@ export async function findStartOptions(): Promise<StartOption[]> {
   for (const folder of vscode.workspace.workspaceFolders ?? []) {
     if (!isLocalUri(folder.uri)) continue;
     const plan = await planStart(folder.uri.fsPath);
+    log.debug(`${folder.name}: ${plan ? describePlan(plan) : 'no dev script Mobile Serve knows, nor a plain HTML page'}.`);
     // Running a script from package.json needs a trusted workspace; serving files doesn't.
     if (!plan || (plan.kind === 'script' && !vscode.workspace.isTrusted)) continue;
     const shared = currentShares().find(s => (s.kind === 'task' || s.kind === 'static') && s.dir === plan.dir);
@@ -47,6 +49,7 @@ async function startStatic(folder: vscode.WorkspaceFolder, dir: string, port: nu
     watcher.dispose();
     await server.close();
   });
+  log.info(`Serving ${dir} on port ${server.port}.`);
   return server.port;
 }
 
@@ -71,6 +74,7 @@ async function startScript(
     if (isOurTask(execution.task.definition, port)) ended = true;
   });
   try {
+    log.info(`Starting “${plan.packageManager} ${scriptArgs(plan, port).join(' ')}” in ${plan.dir}.`);
     const execution = await vscode.tasks.executeTask(task);
     // Recorded straight away, so Close Mobile can stop it while it starts.
     addTaskShare(port, plan.dir, () => closed = true);
@@ -82,6 +86,7 @@ async function startScript(
     }, async (_progress, token) => {
       const outcome = await waitForStart(() => canConnect(host, port),
         () => ({ closed, cancelled: token.isCancellationRequested, ended }), START_TIMEOUT_MS, POLL_INTERVAL_MS);
+      log.info(`The dev server on port ${port}: ${outcome}.`);
       if (outcome === 'listening') return port;
       if (outcome === 'cancelled') {
         execution.terminate();
