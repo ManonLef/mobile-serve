@@ -80,6 +80,9 @@ built to face a network, and Live Server serves every file in the folder, `.env`
 script, and puts Live Server's host setting back (stopping Live Server if it's running). A server
 that was already reachable before Mobile Serve touched it is left alone; stop it yourself.
 
+Closing VS Code puts Live Server's setting back too, since Live Server stops with it. If VS Code was
+force quit or crashed, that happens the next time you open the workspace.
+
 In Restricted Mode (untrusted workspaces) the extension won't restart servers for you, because
 that runs scripts from the project's `package.json`.
 

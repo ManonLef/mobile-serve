@@ -4,7 +4,7 @@ import { findDevServers, realPath, LSOF_MISSING, type DevServer } from './server
 import { getLanAddresses, probe } from './network.ts';
 import { makeReachable } from './makeReachable.ts';
 import { showPanel, disposePanel } from './panel.ts';
-import { registerSharing, onDidChangeShares, currentShares, closeAll } from './sharing.ts';
+import { registerSharing, onDidChangeShares, currentShares, closeAll, undoOnShutdown } from './sharing.ts';
 import type { PageUrl } from './page.ts';
 
 const COMMAND = 'mobileServe.show';
@@ -187,4 +187,6 @@ export function activate(context: vscode.ExtensionContext): void {
   );
 }
 
-export function deactivate(): void {}
+export function deactivate(): void {
+  undoOnShutdown();
+}

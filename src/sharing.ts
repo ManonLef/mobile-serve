@@ -1,8 +1,12 @@
 // What Mobile Serve has made reachable from the network, so "Close Mobile" can undo it.
+import * as path from 'node:path';
 import * as vscode from 'vscode';
 import { listeningPids } from './servers.ts';
 import { restartLocally } from './restart.ts';
+import { restoreSettingInFile } from './settingsFile.ts';
 
+// Where shares are kept, so a window reload or a force quit doesn't lose track of them.
+const STATE_KEY = 'mobileServe.shares';
 const LIVE_SERVER_SETTINGS = 'liveServer.settings';
 const LIVE_SERVER_GO_OFFLINE = 'extension.liveServer.goOffline';
 // How often to check that restarted servers are still running, so the status bar doesn't offer to close what's gone.
@@ -16,6 +20,7 @@ export type Share =
   | { kind: 'liveServer'; port: number; previousHost: unknown };
 
 let shares: Share[] = [];
+let state: vscode.Memento | undefined;
 let checkTimer: ReturnType<typeof setInterval> | undefined;
 const changed = new vscode.EventEmitter<void>();
 export const onDidChangeShares = changed.event;
@@ -32,6 +37,7 @@ function setShares(next: Share[]): void {
     clearInterval(checkTimer);
     checkTimer = undefined;
   }
+  void state?.update(STATE_KEY, shares);
   changed.fire();
 }
 
@@ -42,6 +48,24 @@ export function addShare(share: Share): void {
 
 function liveServerHost(): unknown {
   return vscode.workspace.getConfiguration(LIVE_SERVER_SETTINGS).inspect('host')?.workspaceValue;
+}
+
+function setLiveServerHost(host: unknown): Thenable<void> {
+  return vscode.workspace.getConfiguration(LIVE_SERVER_SETTINGS).update('host', host, vscode.ConfigurationTarget.Workspace);
+}
+
+/**
+ * The file workspace settings are saved in, and the path of Live Server's host setting inside it.
+ * Undefined for an untitled multi-root workspace, which has no file yet.
+ */
+function liveServerHostLocation(): { file: string; jsonPath: string[] } | undefined {
+  const key = `${LIVE_SERVER_SETTINGS}.host`;
+  // Over Remote SSH, WSL or in a container the extension runs on that machine, where the files are.
+  const isLocal = (uri: vscode.Uri) => uri.scheme === 'file' || (uri.scheme === 'vscode-remote' && !!vscode.env.remoteName);
+  const workspaceFile = vscode.workspace.workspaceFile;
+  if (workspaceFile) return isLocal(workspaceFile) ? { file: workspaceFile.fsPath, jsonPath: ['settings', key] } : undefined;
+  const folder = vscode.workspace.workspaceFolders?.[0];
+  return folder && isLocal(folder.uri) ? { file: path.join(folder.uri.fsPath, '.vscode', 'settings.json'), jsonPath: [key] } : undefined;
 }
 
 // Forgets restarted servers that have stopped, or been restarted by hand.
@@ -75,8 +99,7 @@ async function closeRestarted(share: Extract<Share, { kind: 'restarted' }>): Pro
 
 async function closeLiveServer(share: Extract<Share, { kind: 'liveServer' }>): Promise<void> {
   if (liveServerHost() !== '0.0.0.0') return;
-  await vscode.workspace.getConfiguration(LIVE_SERVER_SETTINGS)
-    .update('host', share.previousHost, vscode.ConfigurationTarget.Workspace);
+  await setLiveServerHost(share.previousHost);
   // The setting only applies when Live Server starts, so a running one has to stop.
   if (!(await listeningPids(share.port)).length) return;
   if ((await vscode.commands.getCommands(true)).includes(LIVE_SERVER_GO_OFFLINE)) {
@@ -109,7 +132,59 @@ export async function closeAll(): Promise<void> {
   }
 }
 
+function isShare(value: unknown): value is Share {
+  const share = value as Share | undefined;
+  return typeof share?.port === 'number' && (share.kind === 'liveServer' ||
+    (share.kind === 'restarted' && typeof share.pid === 'number' && typeof share.dir === 'string' && typeof share.localCommand === 'string'));
+}
+
+// Picks up shares from the last session: after a reload, or VS Code closing without undoing them.
+async function restoreShares(saved: Share[]): Promise<void> {
+  const kept: Share[] = [];
+  for (const share of saved) {
+    if (share.kind === 'restarted') {
+      // Terminals outlive a window reload, so the server may still be running.
+      try {
+        if ((await listeningPids(share.port)).includes(share.pid)) kept.push(share);
+      } catch {
+        // Can't tell, so it's forgotten rather than offered for closing.
+      }
+    } else if (liveServerHost() === '0.0.0.0') {
+      // Normally undone when VS Code closes (see undoOnShutdown), so VS Code was force quit or crashed.
+      // Live Server stopped with it, so the setting can go back straight away.
+      try {
+        await setLiveServerHost(share.previousHost);
+        vscode.window.showInformationMessage('Mobile Serve set Live Server back to this computer only: VS Code closed while it was shared on your network.');
+      } catch {
+        // Kept, so Close Mobile still offers to undo it.
+        kept.push(share);
+      }
+    }
+  }
+  // Keeps anything shared while this ran.
+  setShares([...kept.filter(k => !shares.some(s => s.port === k.port)), ...shares]);
+}
+
+/**
+ * Called from deactivate(). Live Server stops when VS Code closes, so its setting goes back too.
+ * The settings API can't be relied on during shutdown, so the file is edited directly; if that
+ * isn't possible, restoreShares undoes it on the next start.
+ */
+export function undoOnShutdown(): void {
+  const share = shares.find(s => s.kind === 'liveServer');
+  const location = liveServerHostLocation();
+  if (!share || !location) return;
+  try {
+    restoreSettingInFile(location.file, location.jsonPath, '0.0.0.0', share.previousHost);
+  } catch {
+    // Undone on the next start instead.
+  }
+}
+
 export function registerSharing(context: vscode.ExtensionContext): void {
+  state = context.workspaceState;
+  const saved = state.get<unknown>(STATE_KEY);
+  if (Array.isArray(saved)) void restoreShares(saved.filter(isShare));
   context.subscriptions.push(changed, vscode.workspace.onDidChangeConfiguration(onConfigurationChanged), {
     dispose: () => clearInterval(checkTimer),
   });
