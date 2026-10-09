@@ -13,9 +13,9 @@ const TERMINAL_NAME = 'Dev server (phone)';
 const SHOW_ANYWAY = 'Show Anyway';
 
 // Calls `check` until it returns something truthy, or resolves to undefined after `timeoutMs` or on cancellation.
-async function waitFor<T>(check: () => Promise<T>, timeoutMs: number, token: vscode.CancellationToken): Promise<T | undefined> {
+async function waitFor<T>(check: () => Promise<T>, timeoutMs: number, token?: vscode.CancellationToken): Promise<T | undefined> {
   const end = Date.now() + timeoutMs;
-  while (Date.now() < end && !token.isCancellationRequested) {
+  while (Date.now() < end && !token?.isCancellationRequested) {
     const result = await check();
     if (result) return result;
     await new Promise(resolve => setTimeout(resolve, POLL_INTERVAL_MS));
@@ -49,6 +49,8 @@ function restartOnNetwork(server: DetectedServer, restart: { command: string; di
     // Stop what started the server too (npm, a watcher…), as Ctrl+C would, so nothing starts it again.
     const processes = await listProcesses();
     const job = serverJob(server.pid, processes, ancestors(process.pid, processes));
+    // Last point where cancelling leaves everything as it was.
+    if (token.isCancellationRequested) return;
     // Outermost first, so a watcher can't restart the server in between.
     for (const pid of [...job.pids].reverse()) {
       try {
@@ -58,8 +60,8 @@ function restartOnNetwork(server: DetectedServer, restart: { command: string; di
       }
     }
 
-    const stopped = await waitFor(async () => (await listeningPids(server.port)).length === 0, STOP_TIMEOUT_MS, token);
-    if (token.isCancellationRequested) return;
+    // Not cancellable: once the server has been stopped, it's always started again.
+    const stopped = await waitFor(async () => (await listeningPids(server.port)).length === 0, STOP_TIMEOUT_MS);
     if (!stopped) {
       vscode.window.showErrorMessage(`Port ${server.port} is still in use. Something may have restarted the server; ` +
         `stop it yourself and run “${restart.command}”.`);
@@ -73,6 +75,7 @@ function restartOnNetwork(server: DetectedServer, restart: { command: string; di
     terminal.show(true);
     terminal.sendText(restart.command);
 
+    // Cancelling only stops waiting: the server keeps starting in its terminal.
     const started = await waitFor(async () => pickRestartedServer(await findDevServers(),
       { dir: restart.dir, oldPort: server.port, pidsBefore }), START_TIMEOUT_MS, token);
     if (token.isCancellationRequested) return;
