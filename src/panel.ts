@@ -3,6 +3,9 @@ import * as crypto from 'node:crypto';
 import * as vscode from 'vscode';
 import { renderPage, type Page } from './page.ts';
 
+// Runs when the page's Stop Sharing button is clicked.
+const STOP_COMMAND = 'mobileServe.stop';
+
 let panel: vscode.WebviewPanel | undefined;
 // The URL the Copy button copies. Kept here rather than trusting what the webview sends.
 let currentUrl = '';
@@ -16,6 +19,10 @@ export function showPanel(page: Page): void {
       { viewColumn: vscode.ViewColumn.Beside, preserveFocus: true },
       { enableScripts: true, localResourceRoots: [] });
     const messages = created.webview.onDidReceiveMessage(async message => {
+      if (message?.type === 'stop') {
+        await vscode.commands.executeCommand(STOP_COMMAND);
+        return;
+      }
       if (message?.type !== 'copy' || !currentUrl) return;
       await vscode.env.clipboard.writeText(currentUrl);
       vscode.window.setStatusBarMessage(`Copied ${currentUrl}`, 3000);

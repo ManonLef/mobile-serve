@@ -15,6 +15,9 @@ export interface Page {
   listening: boolean;
   // Set when VS Code is connected to a remote machine.
   remoteName?: string;
+  // Who made the server reachable from the network: Mobile Serve, which can undo it, or
+  // someone else. Unset when it isn't reachable.
+  sharedBy?: 'mobileServe' | 'other';
 }
 
 export function escapeHtml(text: string): string {
@@ -22,7 +25,7 @@ export function escapeHtml(text: string): string {
 }
 
 // `nonce` allows only this page's own <style> and <script>.
-export function renderPage({ urls, qr, listening, remoteName }: Page, nonce: string): string {
+export function renderPage({ urls, qr, listening, remoteName, sharedBy }: Page, nonce: string): string {
   const [primary, ...others] = urls;
   // A connection from this computer doesn't go through the firewall or the Wi-Fi network,
   // so it can't confirm the phone will get through.
@@ -36,6 +39,13 @@ export function renderPage({ urls, qr, listening, remoteName }: Page, nonce: str
     ? `<p class="warn">⚠ VS Code is connected to a remote environment (${escapeHtml(remoteName)}). ` +
       'These addresses belong to that machine, which your phone may not be able to reach.</p>'
     : '';
+  const sharing = sharedBy === 'mobileServe'
+    ? '<p class="warn">⚠ Every device on this network can open this server while it\'s shared.</p>' +
+      '<button id="stop" class="secondary">Stop Sharing</button>'
+    : sharedBy === 'other'
+      ? '<p class="warn">⚠ Every device on this network can open this server. Mobile Serve didn\'t set that up, ' +
+        'so stop the server yourself when you\'re done.</p>'
+      : '';
   const otherList = others.map(u =>
     `<li><code>${escapeHtml(u.url)}</code> <span class="dim">(${escapeHtml(u.name)})</span></li>`).join('');
 
@@ -48,6 +58,8 @@ export function renderPage({ urls, qr, listening, remoteName }: Page, nonce: str
   .url { font-size: 1.4em; font-family: var(--vscode-editor-font-family); margin: 16px 0 8px; user-select: all; }
   button { background: var(--vscode-button-background); color: var(--vscode-button-foreground); border: 0; padding: 6px 14px; border-radius: 3px; cursor: pointer; }
   button:hover { background: var(--vscode-button-hoverBackground); }
+  button.secondary { background: var(--vscode-button-secondaryBackground); color: var(--vscode-button-secondaryForeground); }
+  button.secondary:hover { background: var(--vscode-button-secondaryHoverBackground); }
   .ok { color: var(--vscode-testing-iconPassed); }
   .warn { color: var(--vscode-editorWarning-foreground); }
   .dim { opacity: .6; }
@@ -59,6 +71,7 @@ export function renderPage({ urls, qr, listening, remoteName }: Page, nonce: str
   <div class="url">${escapeHtml(primary.url)}</div>
   <button id="copy">Copy URL</button>
   ${status}
+  ${sharing}
   ${remoteWarning}
   <p class="hint">Scan with your phone's camera. Your phone must be on the same Wi-Fi network.
     If the page doesn't load, allow incoming connections in your computer's firewall, and avoid guest
@@ -69,6 +82,7 @@ export function renderPage({ urls, qr, listening, remoteName }: Page, nonce: str
     // acquireVsCodeApi() may only be called once per webview.
     const vscodeApi = acquireVsCodeApi();
     document.getElementById('copy').addEventListener('click', () => vscodeApi.postMessage({ type: 'copy' }));
+    document.getElementById('stop')?.addEventListener('click', () => vscodeApi.postMessage({ type: 'stop' }));
   </script>
 </body></html>`;
 }

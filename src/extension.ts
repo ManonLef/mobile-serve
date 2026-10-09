@@ -15,6 +15,9 @@ const CAN_DETECT_SERVERS = process.platform !== 'win32';
 
 type ServerItem = vscode.QuickPickItem & { server?: DevServer; manual?: boolean };
 
+// The port the panel offers to stop sharing, if it does.
+let panelSharedPort: number | undefined;
+
 // Running servers, or a message saying why they couldn't be looked for.
 async function findWorkspaceServers(): Promise<{ servers: DevServer[]; problem?: string }> {
   if (!CAN_DETECT_SERVERS) return { servers: [], problem: 'Detecting servers isn\'t supported on Windows — enter a port' };
@@ -113,7 +116,12 @@ async function show(): Promise<void> {
   const scheme = https ? 'https' : 'http';
   const [first, ...rest] = addresses.map((a): PageUrl => ({ name: a.name, url: `${scheme}://${a.address}:${port}` }));
   const qr = await toDataURL(first.url, { margin: 1, width: 320 });
-  showPanel({ urls: [first, ...rest], qr, listening, remoteName: vscode.env.remoteName });
+  const ours = currentShares().some(s => s.port === port);
+  showPanel({
+    urls: [first, ...rest], qr, listening, remoteName: vscode.env.remoteName,
+    sharedBy: listening ? (ours ? 'mobileServe' : 'other') : undefined,
+  });
+  panelSharedPort = ours ? port : undefined;
 }
 
 // "Mobile" opens a server up for the phone; while Mobile Serve has opened one up, it becomes "Close Mobile".
@@ -156,7 +164,14 @@ export function activate(context: vscode.ExtensionContext): void {
 
   context.subscriptions.push(
     item,
-    onDidChangeShares(() => updateStatusBar(item)),
+    onDidChangeShares(() => {
+      updateStatusBar(item);
+      // Sharing ended (closed, or the server stopped), so the panel's URLs and Stop Sharing button are out of date.
+      if (panelSharedPort !== undefined && !currentShares().some(s => s.port === panelSharedPort)) {
+        panelSharedPort = undefined;
+        disposePanel();
+      }
+    }),
     vscode.commands.registerCommand(COMMAND, reportingErrors(show)),
     vscode.commands.registerCommand(STOP_COMMAND, reportingErrors(async () => {
       if (!currentShares().length) {
@@ -164,6 +179,7 @@ export function activate(context: vscode.ExtensionContext): void {
         return;
       }
       // The URLs stop working, so the panel goes too.
+      panelSharedPort = undefined;
       disposePanel();
       await closeAll();
     })),
