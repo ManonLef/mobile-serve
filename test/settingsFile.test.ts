@@ -19,6 +19,16 @@ test('restoreSetting puts back the previous value, also inside a .code-workspace
   assert.deepStrictEqual(JSON.parse(restored!), { folders: [], settings: { [KEY]: '127.0.0.1' } });
 });
 
+test('restoreSetting keeps the file\'s own indentation and line endings', () => {
+  assert.strictEqual(restoreSetting('{\n\t"a": 1,\n\t"liveServer.settings.host": "0.0.0.0"\n}\n', [KEY], '0.0.0.0', undefined),
+    '{\n\t"a": 1\n}\n');
+  assert.strictEqual(restoreSetting('{\r\n  "a": 1,\r\n  "liveServer.settings.host": "0.0.0.0"\r\n}\r\n', [KEY], '0.0.0.0', undefined),
+    '{\r\n  "a": 1\r\n}\r\n');
+  const workspace = '{\n  "folders": [],\n  "settings": {\n    "x": 1,\n    "liveServer.settings.host": "0.0.0.0",\n    "y": 2\n  }\n}\n';
+  assert.strictEqual(restoreSetting(workspace, ['settings', KEY], '0.0.0.0', undefined),
+    '{\n  "folders": [],\n  "settings": {\n    "x": 1,\n    "y": 2\n  }\n}\n');
+});
+
 test('restoreSetting leaves a value changed by hand, or missing, alone', () => {
   assert.strictEqual(restoreSetting('{ "liveServer.settings.host": "192.168.1.5" }', [KEY], '0.0.0.0', undefined), undefined);
   assert.strictEqual(restoreSetting('{}', [KEY], '0.0.0.0', undefined), undefined);
