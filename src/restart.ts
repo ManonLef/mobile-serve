@@ -22,6 +22,9 @@ export interface Run {
 
 const sleep = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
 
+// Ports whose server is being stopped and started again, so it isn't done twice at once.
+const restarting = new Set<number>();
+
 // Calls `check` until it returns something truthy, or resolves to undefined after `timeoutMs` or on cancellation.
 async function waitFor<T>(check: () => Promise<T>, timeoutMs: number, token?: vscode.CancellationToken): Promise<T | undefined> {
   const end = Date.now() + timeoutMs;
@@ -54,6 +57,22 @@ async function findServerTerminal(shellPid: number | undefined, dir: string): Pr
  * Resolves to that terminal, or undefined after telling the user why it didn't happen.
  */
 async function stopAndRun(
+  server: { pid: number; port: number }, run: Run, token?: vscode.CancellationToken,
+): Promise<vscode.Terminal | undefined> {
+  if (restarting.has(server.port)) {
+    vscode.window.showInformationMessage(`The server on port ${server.port} is already restarting.`);
+    return;
+  }
+  restarting.add(server.port);
+  try {
+    return await stopAndRunOnce(server, run, token);
+  } finally {
+    restarting.delete(server.port);
+  }
+}
+
+// stopAndRun, for a port no other restart is busy with.
+async function stopAndRunOnce(
   server: { pid: number; port: number }, run: Run, token?: vscode.CancellationToken,
 ): Promise<vscode.Terminal | undefined> {
   // Check the pid still owns the port, so a pid reused by another process is never killed.

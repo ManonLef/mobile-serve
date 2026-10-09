@@ -166,8 +166,16 @@ async function stillShared(share: Share): Promise<boolean> {
   }
 }
 
-// Undoes everything Mobile Serve made reachable.
-export async function closeAll(): Promise<void> {
+// The close in progress. Clicking Close Mobile again while it runs would close (and restart) servers twice.
+let closing: Promise<void> | undefined;
+
+// Undoes everything Mobile Serve made reachable. Joins the close in progress, if there is one.
+export function closeAll(): Promise<void> {
+  closing ??= closeEach().finally(() => closing = undefined);
+  return closing;
+}
+
+async function closeEach(): Promise<void> {
   for (const share of [...shares]) {
     try {
       if (share.kind === 'restarted') await closeRestarted(share);
