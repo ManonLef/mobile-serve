@@ -1,8 +1,8 @@
 {
   "name": "mobile-serve",
   "displayName": "Mobile Serve",
-  "description": "Open your local dev server on your real phone: pick a running server, scan a QR code, done.",
-  "version": "0.0.3",
+  "description": "Open your project on your real phone, like Go Live: start it or pick a running server, scan a QR code, done.",
+  "version": "0.1.0",
   "publisher": "local",
   "license": "MIT",
   "categories": ["Other"],
