@@ -1,11 +1,9 @@
 import { test } from 'node:test';
 import assert from 'node:assert';
 import { spawn } from 'node:child_process';
-import * as fs from 'node:fs/promises';
-import * as os from 'node:os';
 import * as path from 'node:path';
 import {
-  buildNetworkCommand, detectPackageManager, parseScriptEnv, runningProgram, runningSameScript, splitCommandLine, splitPsEnvironment,
+  buildNetworkCommand, parseScriptEnv, runningProgram, runningSameScript, splitCommandLine, splitPsEnvironment,
 } from '../src/restartCommand.ts';
 import { listProcesses } from '../src/servers.ts';
 
@@ -86,21 +84,6 @@ test('splitPsEnvironment keeps values with spaces whole and drops the command li
     'npm_config_user_agent=npm/10.8.0 node/v22.18.0 darwin arm64 workspaces/false',
   ]);
   assert.deepStrictEqual(splitPsEnvironment(''), []);
-});
-
-test('detects the package manager from the monorepo root and the packageManager field', async () => {
-  const root = await fs.mkdtemp(path.join(os.tmpdir(), 'mobile-serve-'));
-  try {
-    const app = path.join(root, 'packages', 'web');
-    await fs.mkdir(app, { recursive: true });
-    await fs.writeFile(path.join(root, 'pnpm-lock.yaml'), '');
-    await fs.writeFile(path.join(app, 'package.json'), '{}');
-    assert.strictEqual(await detectPackageManager(app), 'pnpm');
-    await fs.writeFile(path.join(app, 'package.json'), '{"packageManager": "yarn@4.1.0"}');
-    assert.strictEqual(await detectPackageManager(app), 'yarn');
-  } finally {
-    await fs.rm(root, { recursive: true, force: true });
-  }
 });
 
 test('runningSameScript finds the processes of the server\'s own script, not the one that started it', async t => {

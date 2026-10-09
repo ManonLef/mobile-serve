@@ -69,8 +69,3 @@ export function devServerTool(body: unknown): Tool | undefined {
   const tool = scriptTool(body);
   return tool?.devScript.test(body as string) ? tool : undefined;
 }
-
-// The arguments that run `script` with `extra` passed on to it. npm needs "--" in between.
-export function runScriptArgs(packageManager: string, script: string, extra: string[]): string[] {
-  return packageManager === 'npm' ? ['run', script, '--', ...extra] : ['run', script, ...extra];
-}

@@ -3,19 +3,12 @@
 import * as fs from 'node:fs/promises';
 import * as path from 'node:path';
 import { execQuiet } from './exec.ts';
+import { PACKAGE_MANAGERS, detectPackageManager, runScriptArgs } from './packageManager.ts';
 import { ancestors, isInside, type DetectedServer, type ProcessInfo } from './servers.ts';
-import { TOOLS, SAFE_SCRIPT_NAME, scriptTool, runScriptArgs } from './tools.ts';
+import { TOOLS, SAFE_SCRIPT_NAME, scriptTool } from './tools.ts';
 
 // Runtimes that run a tool's script file; the tool is the first argument after their options.
 const RUNTIMES = new Set(['node', 'nodejs', 'bun', 'deno']);
-const PACKAGE_MANAGERS = ['npm', 'pnpm', 'yarn', 'bun'];
-const LOCKFILES = [
-  ['pnpm-lock.yaml', 'pnpm'],
-  ['yarn.lock', 'yarn'],
-  ['bun.lockb', 'bun'],
-  ['bun.lock', 'bun'],
-  ['package-lock.json', 'npm'],
-];
 
 // The program arguments run, such as "vite" for ["node", "/app/node_modules/vite/bin/vite.js", "--port", "3000"].
 // Only the first word of a name counts, so a process title like "next-server (v14.2.0)" gives "next-server".
@@ -152,33 +145,6 @@ export function buildNetworkCommand({ script, body, program, packageManager }: {
   const runningTool = program && TOOLS.find(t => t.inProcess.test(program));
   if (!runningTool || !SAFE_SCRIPT_NAME.test(script) || scriptTool(body) !== runningTool) return;
   return [packageManager, ...runScriptArgs(packageManager, script, runningTool.hostArgs)].join(' ');
-}
-
-async function readPackageManagerField(dir: string): Promise<string | undefined> {
-  try {
-    const field = JSON.parse(await fs.readFile(path.join(dir, 'package.json'), 'utf8')).packageManager;
-    const name = typeof field === 'string' ? field.split('@')[0] : undefined;
-    return name && PACKAGE_MANAGERS.includes(name) ? name : undefined;
-  } catch {
-    return undefined;
-  }
-}
-
-// Looks in `dir` and the folders above it, so packages in a monorepo use the repo's package manager.
-export async function detectPackageManager(dir: string): Promise<string> {
-  for (let current = dir; ; current = path.dirname(current)) {
-    const field = await readPackageManagerField(current);
-    if (field) return field;
-    for (const [lockfile, manager] of LOCKFILES) {
-      try {
-        await fs.access(path.join(current, lockfile));
-        return manager;
-      } catch {
-        // Not this one.
-      }
-    }
-    if (path.dirname(current) === current) return 'npm';
-  }
 }
 
 /**

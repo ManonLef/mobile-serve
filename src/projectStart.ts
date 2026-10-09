@@ -5,8 +5,8 @@ import * as fs from 'node:fs/promises';
 import * as net from 'node:net';
 import * as path from 'node:path';
 import { canConnect } from './network.ts';
-import { detectPackageManager } from './restartCommand.ts';
-import { SAFE_SCRIPT_NAME, devServerTool, runScriptArgs, type Tool } from './tools.ts';
+import { detectPackageManager, runScriptArgs } from './packageManager.ts';
+import { SAFE_SCRIPT_NAME, devServerTool, type Tool } from './tools.ts';
 
 // Tried in this order. "start" is often a production server, so a dev script wins.
 const SCRIPT_NAMES = ['dev', 'start', 'serve'];
