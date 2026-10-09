@@ -1,6 +1,10 @@
 import { execFile } from 'node:child_process';
+import * as path from 'node:path';
 
 const EXEC_TIMEOUT_MS = 5000;
+// Where macOS and Linux keep lsof, ps, route and ip. VS Code's PATH can leave them out (on macOS
+// lsof is in /usr/sbin), for example when it was opened from the Dock and couldn't read the shell's.
+const SYSTEM_DIRS = ['/usr/sbin', '/usr/bin', '/sbin', '/bin'];
 
 export interface ExecResult {
   stdout: string;
@@ -9,13 +13,7 @@ export interface ExecResult {
   code: number;
 }
 
-/**
- * Runs a program without a shell and resolves to what it wrote, or undefined if the program isn't installed.
- * Output from a non-zero exit is kept: lsof exits 1 when some of the pids it was asked
- * about have gone away, but still reports the rest. Rejects when the output can't be
- * complete: the program timed out, was killed, or wrote too much.
- */
-export function execOutput(file: string, args: string[]): Promise<ExecResult | undefined> {
+function run(file: string, args: string[]): Promise<ExecResult | undefined> {
   return new Promise((resolve, reject) => {
     execFile(file, args, { timeout: EXEC_TIMEOUT_MS }, (err, stdout, stderr) => {
       const code = (err as NodeJS.ErrnoException | null)?.code as unknown;
@@ -24,6 +22,23 @@ export function execOutput(file: string, args: string[]): Promise<ExecResult | u
       else reject(new Error(err.killed ? `${file} didn't finish within ${EXEC_TIMEOUT_MS / 1000} seconds` : `${file} failed: ${err.message}`));
     });
   });
+}
+
+/**
+ * Runs a program without a shell and resolves to what it wrote, or undefined if the program isn't installed.
+ * A program that isn't on the PATH is looked for in `fallbackDirs` too (not on Windows).
+ * Output from a non-zero exit is kept: lsof exits 1 when some of the pids it was asked
+ * about have gone away, but still reports the rest. Rejects when the output can't be
+ * complete: the program timed out, was killed, or wrote too much.
+ */
+export async function execOutput(file: string, args: string[], fallbackDirs = SYSTEM_DIRS): Promise<ExecResult | undefined> {
+  const result = await run(file, args);
+  if (result || process.platform === 'win32' || file.includes('/')) return result;
+  for (const dir of fallbackDirs) {
+    const found = await run(path.join(dir, file), args);
+    if (found) return found;
+  }
+  return undefined;
 }
 
 // execOutput's stdout.
