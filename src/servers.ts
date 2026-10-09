@@ -9,7 +9,7 @@ const DEV_PROCESS_NAMES = new Set([
   'node', 'nodejs', 'python', 'ruby', 'php', 'php-fpm', 'deno', 'bun',
   'java', 'dotnet', 'hugo', 'caddy', 'nginx', 'httpd',
 ]);
-// VS Code and its forks. Only Live Server's port is worth showing from these.
+// VS Code and its forks, which stopping a server never climbs into (see serverJob).
 export const VS_CODE_PROCESS = /^(code|electron|cursor|vscodium|codium|windsurf)\b/i;
 // Docker's port forwarders. macOS cuts process names at 16 characters, hence the prefixes.
 const DOCKER_PROCESS = /^(com\.docker|docker-proxy|vpnkit)/i;
@@ -128,8 +128,9 @@ export function realPath(dir: string): Promise<string> {
 /**
  * Groups listening sockets into one server per port, keeping only likely dev servers.
  * When several processes listen on a port, the server is the one the phone would reach.
- * Live Server runs inside a VS Code extension host: this window's is `extensionHostPid`, which over
- * Remote SSH, WSL or in a container is a plain node process, not one named after VS Code.
+ * Live Server runs inside this window's extension host, `extensionHostPid`, which over Remote SSH, WSL
+ * or in a container is a plain node process. A Live Server in another window serves another project,
+ * and its setting can't be changed from here, so it isn't listed.
  */
 export function collectServers(processes: LsofProcess[], liveServerPort?: number, extensionHostPid?: number): DetectedServer[] {
   const byPort = new Map<number, { pid: number; label: string; kind: DevServer['kind']; host: string }[]>();
@@ -138,8 +139,7 @@ export function collectServers(processes: LsofProcess[], liveServerPort?: number
       const address = parseListenAddress(name);
       if (!address || address.port < MIN_DEV_PORT) continue;
 
-      const inVsCode = pid === extensionHostPid || VS_CODE_PROCESS.test(command);
-      const kind = inVsCode && address.port === liveServerPort ? 'liveServer'
+      const kind = pid === extensionHostPid && address.port === liveServerPort ? 'liveServer'
         : DOCKER_PROCESS.test(command) ? 'docker'
         : isDevProcess(command) ? 'process'
         : undefined;

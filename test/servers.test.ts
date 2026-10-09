@@ -55,7 +55,7 @@ test('collectServers keeps dev servers, Live Server and Docker, and works out re
     { pid: 4, command: 'node', names: ['*:80'] },
     { pid: 5, command: 'Google Chrome', names: ['127.0.0.1:9222'] },
     { pid: 6, command: 'com.docker.backe', names: ['*:3306'] },
-  ], 5500);
+  ], 5500, 3);
   assert.deepStrictEqual(servers, [
     { port: 5173, pid: 1, label: 'node', kind: 'process', lanReachable: false },
     { port: 8000, pid: 2, label: 'python3', kind: 'process', lanReachable: true },
@@ -166,6 +166,11 @@ test('collectServers finds Live Server in this window\'s extension host, even wh
   const processes = [{ pid: 7, command: 'node', names: ['127.0.0.1:5500'] }, { pid: 8, command: 'node', names: ['127.0.0.1:3000'] }];
   assert.deepStrictEqual(collectServers(processes, 5500, 7).map(s => [s.port, s.kind, s.label]), [[5500, 'liveServer', 'Live Server'], [3000, 'process', 'node']]);
   assert.deepStrictEqual(collectServers(processes, 5500, 99).map(s => s.kind), ['process', 'process']);
+});
+
+test('collectServers leaves out Live Server running in another VS Code window', () => {
+  // This window's extension host is pid 3; another window's (pid 9) serves its project on 5500.
+  assert.deepStrictEqual(collectServers([{ pid: 9, command: 'Code Helper (Plugin)', names: ['127.0.0.1:5500'] }], 5500, 3), []);
 });
 
 test('listensFrom tells the folder a server runs from', { skip: process.platform === 'win32' && 'needs lsof' }, async () => {
