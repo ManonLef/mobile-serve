@@ -1,0 +1,16 @@
+{
+  // Type-checking only: esbuild bundles the extension, and Node runs the tests straight from .ts.
+  "compilerOptions": {
+    "target": "es2022",
+    "lib": ["es2022"],
+    "module": "preserve",
+    "noEmit": true,
+    "allowImportingTsExtensions": true,
+    // Keeps the code runnable by Node's type stripping: no enums, namespaces or type-only imports without `type`.
+    "verbatimModuleSyntax": true,
+    "erasableSyntaxOnly": true,
+    "strict": true,
+    "skipLibCheck": true
+  },
+  "include": ["src", "test"]
+}

@@ -1,0 +1,6 @@
+{
+  // Use the project's TypeScript (5.9) rather than the older one built into VS Code,
+  // which doesn't know newer tsconfig options such as erasableSyntaxOnly.
+  "typescript.tsdk": "node_modules/typescript/lib",
+  "typescript.enablePromptUseWorkspaceTsdk": true
+}

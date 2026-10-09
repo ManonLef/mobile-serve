@@ -1,0 +1,39 @@
+{
+  "name": "mobile-serve",
+  "displayName": "Mobile Serve",
+  "description": "Open your local dev server on your real phone: pick a running server, scan a QR code, done.",
+  "version": "0.0.3",
+  "publisher": "local",
+  "license": "MIT",
+  "categories": ["Other"],
+  "keywords": ["mobile", "phone", "qr code", "lan", "dev server", "vite", "live server"],
+  "engines": { "vscode": "^1.82.0" },
+  "main": "./dist/extension.js",
+  "activationEvents": ["onStartupFinished"],
+  "capabilities": {
+    "untrustedWorkspaces": {
+      "supported": "limited",
+      "description": "In Restricted Mode the extension won't restart dev servers, because that runs scripts from the project's package.json."
+    }
+  },
+  "contributes": {
+    "commands": [
+      { "command": "mobileServe.show", "title": "Mobile Serve: Show Phone URL" }
+    ]
+  },
+  "scripts": {
+    "build": "esbuild src/extension.ts --bundle --platform=node --format=cjs --target=node18 --external:vscode --outfile=dist/extension.js",
+    "watch": "npm run build -- --sourcemap --watch",
+    "check": "tsc",
+    "test": "node --test \"test/*.test.ts\"",
+    "vscode:prepublish": "npm run check && npm test && npm run build -- --minify"
+  },
+  "dependencies": { "qrcode": "1.5.4" },
+  "devDependencies": {
+    "@types/node": "^18.19.0",
+    "@types/qrcode": "^1.5.5",
+    "@types/vscode": "~1.82.0",
+    "esbuild": "^0.25.0",
+    "typescript": "^5.9.0"
+  }
+}

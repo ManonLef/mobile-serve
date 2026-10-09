@@ -1,0 +1,11 @@
+# Everything the extension needs is bundled into dist/extension.js.
+src/**
+test/**
+node_modules/**
+.vscode/**
+tsconfig.json
+*.vsix
+.gitignore
+**/*.map
+package-lock.json
+.nvmrc

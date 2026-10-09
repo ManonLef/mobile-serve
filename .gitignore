@@ -1,0 +1,8 @@
+node_modules/
+dist/
+*.vsix
+*.log
+
+# macOS
+.DS_Store
+._*
