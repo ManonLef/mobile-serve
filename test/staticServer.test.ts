@@ -32,6 +32,9 @@ async function site(): Promise<{ root: string; cleanup: () => Promise<void> }> {
   await fs.writeFile(path.join(root, 'style.css'), 'h1 { color: red }');
   await fs.writeFile(path.join(root, 'blog', 'index.html'), '<h1>Blog</h1>');
   await fs.writeFile(path.join(root, '.env'), 'SECRET=1');
+  await fs.mkdir(path.join(root, '.git'));
+  await fs.writeFile(path.join(root, '.git', 'config'), 'SECRET=2');
+  await fs.symlink(path.join(root, '.git'), path.join(root, 'public'));
   await fs.writeFile(path.join(parent, 'outside.txt'), 'outside');
   await fs.symlink(path.join(parent, 'outside.txt'), path.join(root, 'link.txt'));
   return { root, cleanup: () => fs.rm(parent, { recursive: true, force: true }) };
@@ -74,7 +77,7 @@ test('never serves hidden files, or files outside the folder', async () => {
   const { root, cleanup } = await site();
   const server = await startStaticServer(root, 0);
   try {
-    for (const url of ['/.env', '/%2e%2e/outside.txt', '/../outside.txt', '/link.txt', '/missing.html']) {
+    for (const url of ['/.env', '/%2e%2e/outside.txt', '/../outside.txt', '/link.txt', '/public/config', '/missing.html']) {
       const res = await get(server, url);
       assert.strictEqual(res.status, 404, url);
       assert.ok(!/SECRET|outside/.test(res.body), url);
