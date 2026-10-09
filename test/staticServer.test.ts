@@ -105,15 +105,15 @@ test('tells open pages to reload, or only to swap the CSS when only CSS changed'
       return messages.at(-1);
     };
 
-    server.fileChanged(path.join(root, 'style.css'));
+    server.fileChanged('style.css');
     assert.strictEqual(await nextMessage(), 'css');
     // Saved together: one reload for both.
-    server.fileChanged(path.join(root, 'style.css'));
-    server.fileChanged(path.join(root, 'index.html'));
+    server.fileChanged('style.css');
+    server.fileChanged('index.html');
     assert.strictEqual(await nextMessage(), 'reload');
     assert.deepStrictEqual(messages, ['css', 'reload']);
     // Changes to hidden files are ignored.
-    server.fileChanged(path.join(root, '.git', 'index'));
+    server.fileChanged(path.join('.git', 'index'));
     await new Promise(resolve => setTimeout(resolve, 300));
     assert.deepStrictEqual(messages, ['css', 'reload']);
   } finally {

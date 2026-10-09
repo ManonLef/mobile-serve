@@ -39,7 +39,8 @@ const RELOAD_SCRIPT = `<script>(() => {
 
 export interface StaticServer {
   port: number;
-  // Tells open pages a file in the folder changed.
+  // Tells open pages a file changed. `file` is relative to the folder, so only hidden files and
+  // folders inside it are ignored, not a hidden folder the project itself sits in.
   fileChanged(file: string): void;
   close(): Promise<void>;
 }
