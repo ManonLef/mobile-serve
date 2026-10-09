@@ -2,7 +2,7 @@
 // Live Server. Files and folders starting with "." (.env, .git…) are never served.
 import * as fs from 'node:fs';
 import * as http from 'node:http';
-import type { AddressInfo } from 'node:net';
+import { isIP, type AddressInfo } from 'node:net';
 import * as path from 'node:path';
 import { isInside } from './servers.ts';
 
@@ -69,6 +69,17 @@ export function resolveRequestPath(root: string, urlPath: string): string | unde
   return isInside(file, root) ? file : undefined;
 }
 
+/**
+ * Whether a request's Host header is an IP address or localhost, which is all the phone and this
+ * computer use. A website that points its own name at this computer (DNS rebinding) sends that name,
+ * so it can't read the folder from the visitor's browser.
+ */
+export function isAllowedHost(host: string | undefined): boolean {
+  const match = /^(?:\[([^\]]+)\]|([^:\[\]]+))(?::\d+)?$/.exec(host ?? '');
+  const hostname = match?.[1] ?? match?.[2];
+  return !!hostname && (hostname.toLowerCase() === 'localhost' || isIP(hostname) !== 0);
+}
+
 function send(res: http.ServerResponse, status: number, text: string, headers: http.OutgoingHttpHeaders = {}): void {
   res.writeHead(status, { 'Content-Type': 'text/plain; charset=utf-8', ...headers });
   res.end(text);
@@ -84,6 +95,7 @@ export function startStaticServer(root: string, port: number): Promise<StaticSer
   let onlyCss = true;
 
   const handle = async (req: http.IncomingMessage, res: http.ServerResponse): Promise<void> => {
+    if (!isAllowedHost(req.headers.host)) return send(res, 403, 'Open this page by its IP address');
     if (req.method !== 'GET' && req.method !== 'HEAD') return send(res, 405, 'Method not allowed', { Allow: 'GET, HEAD' });
     const urlPath = req.url ?? '/';
     if (urlPath.split('?')[0] === RELOAD_PATH) {
