@@ -175,16 +175,23 @@ export function closeAll(): Promise<void> {
   return closing;
 }
 
+// Closes every share, even when one fails, then reports what couldn't be closed.
 async function closeEach(): Promise<void> {
+  const failures: string[] = [];
   for (const share of [...shares]) {
     try {
       if (share.kind === 'restarted') await closeRestarted(share);
       else if (share.kind === 'liveServer') await closeLiveServer(share);
       else if (share.kind === 'task') closeTask(share);
       else await closeStatic(share);
+    } catch (err) {
+      failures.push(`port ${share.port} (${err instanceof Error ? err.message : String(err)})`);
     } finally {
       if (!(await stillShared(share))) setShares(shares.filter(s => s !== share));
     }
+  }
+  if (failures.length) {
+    throw new Error(`Couldn't stop sharing ${failures.join(', ')}. Click Close Mobile to try again.`);
   }
 }
 
