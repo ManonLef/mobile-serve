@@ -4,13 +4,17 @@ import {
   findDevServers, listeningPids, listProcesses, ancestors, serverJob, unrelatedListeners, getWorkingDirs, pickRestartedServer,
   type DetectedServer,
 } from './servers.ts';
+import { runningSameScript } from './restartCommand.ts';
+import { waitFor } from './wait.ts';
 
-const POLL_INTERVAL_MS = 500;
 const STOP_TIMEOUT_MS = 5000;
 // How long the progress notification waits for the restarted server.
 const START_TIMEOUT_MS = 30000;
 // How long to keep looking for it after that, so a slow or cancelled start is still noticed.
 const START_WATCH_MS = 5 * 60000;
+// How often to look while the notification waits, and after it gave up.
+const START_POLL_MS = 500;
+const SLOW_POLL_MS = 5000;
 const TERMINAL_NAME = 'Dev server (phone)';
 
 // A command and the folder to run it in.
@@ -19,18 +23,8 @@ export interface Run {
   dir: string;
 }
 
-const sleep = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
-
-// Calls `check` until it returns something truthy, or resolves to undefined after `timeoutMs` or on cancellation.
-async function waitFor<T>(check: () => Promise<T>, timeoutMs: number, token?: vscode.CancellationToken): Promise<T | undefined> {
-  const end = Date.now() + timeoutMs;
-  while (Date.now() < end && !token?.isCancellationRequested) {
-    const result = await check();
-    if (result) return result;
-    await sleep(POLL_INTERVAL_MS);
-  }
-  return undefined;
-}
+// Ports whose server is being stopped and started again, so it isn't done twice at once.
+const restarting = new Set<number>();
 
 // The VS Code terminal whose shell started the server, if it's still in the server's directory.
 async function findServerTerminal(shellPid: number | undefined, dir: string): Promise<vscode.Terminal | undefined> {
@@ -55,6 +49,22 @@ async function findServerTerminal(shellPid: number | undefined, dir: string): Pr
 async function stopAndRun(
   server: { pid: number; port: number }, run: Run, token?: vscode.CancellationToken,
 ): Promise<vscode.Terminal | undefined> {
+  if (restarting.has(server.port)) {
+    vscode.window.showInformationMessage(`The server on port ${server.port} is already restarting.`);
+    return;
+  }
+  restarting.add(server.port);
+  try {
+    return await stopAndRunOnce(server, run, token);
+  } finally {
+    restarting.delete(server.port);
+  }
+}
+
+// stopAndRun, for a port no other restart is busy with.
+async function stopAndRunOnce(
+  server: { pid: number; port: number }, run: Run, token?: vscode.CancellationToken,
+): Promise<vscode.Terminal | undefined> {
   // Check the pid still owns the port, so a pid reused by another process is never killed.
   const listening = await listeningPids(server.port);
   if (!listening.includes(server.pid)) {
@@ -64,7 +74,7 @@ async function stopAndRun(
   // Stop what started the server too (npm, a watcher…), the processes Ctrl+C would stop, so nothing starts it again.
   // Each gets SIGTERM rather than Ctrl+C's SIGINT, which commands a script starts in the background ignore.
   const processes = await listProcesses();
-  const job = serverJob(server.pid, processes, ancestors(process.pid, processes));
+  const job = serverJob(server.pid, processes, ancestors(process.pid, processes), await runningSameScript(server.pid, processes));
   // Another process on the port (another project's server on [::1], say) would keep it busy, and isn't ours to stop.
   const others = unrelatedListeners(listening, job.pids, processes);
   if (others.length) {
@@ -124,16 +134,21 @@ export function restartOnNetwork(
     if (!terminal) return;
 
     const watch = waitFor(async () => pickRestartedServer(await findDevServers(),
-      { dir: run.dir, oldPort: server.port, pidsBefore }), START_WATCH_MS);
+      { dir: run.dir, oldPort: server.port, pidsBefore }), START_WATCH_MS,
+    elapsed => elapsed < START_TIMEOUT_MS ? START_POLL_MS : SLOW_POLL_MS);
     watch.then(started => started && onStarted(started), () => {
-      // Reported below while the notification waits; later failures only end the watch.
+      // Checks only fail for good after the notification is gone (see waitFor), which ends the watch.
     });
 
     // Cancelling only stops waiting: the server keeps starting in its terminal.
-    const cancelled = new Promise<'gave up'>(resolve => token.onCancellationRequested(() => resolve('gave up')));
-    const timedOut = sleep(START_TIMEOUT_MS).then(() => 'gave up' as const);
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    let onCancel: vscode.Disposable | undefined;
+    const gaveUp = new Promise<'gave up'>(resolve => {
+      timer = setTimeout(() => resolve('gave up'), START_TIMEOUT_MS);
+      onCancel = token.onCancellationRequested(() => resolve('gave up'));
+    });
     try {
-      const started = await Promise.race([watch, cancelled, timedOut]);
+      const started = await Promise.race([watch, gaveUp]);
       if (started === 'gave up' && token.isCancellationRequested) return;
       if (!started || started === 'gave up') {
         vscode.window.showErrorMessage(`The dev server didn't become reachable within ${START_TIMEOUT_MS / 1000} seconds. ` +
@@ -141,10 +156,9 @@ export function restartOnNetwork(
         return;
       }
       return started;
-    } catch (err) {
-      const reason = err instanceof Error ? err.message : String(err);
-      vscode.window.showErrorMessage(`The dev server is starting again, but checking on it failed: ${reason}`);
-      return;
+    } finally {
+      clearTimeout(timer);
+      onCancel?.dispose();
     }
   });
 }

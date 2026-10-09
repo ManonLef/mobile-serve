@@ -1,7 +1,7 @@
 // Finds dev servers listening on this machine, using lsof (macOS and Linux only).
 import * as fs from 'node:fs';
 import * as path from 'node:path';
-import { execQuiet } from './exec.ts';
+import { execOutput, execQuiet, type ExecResult } from './exec.ts';
 
 // Process names that are likely to be a dev server. Compared after dropping a trailing
 // version number, so python3.12 and php8.2 match too.
@@ -37,6 +37,8 @@ export interface DevServer {
   kind: 'process' | 'liveServer' | 'docker' | 'manual';
   // Listens on an address the phone can use. Unknown for a port typed in by hand.
   lanReachable?: boolean;
+  // The one IPv4 address it listens on, when it doesn't listen on all of them.
+  boundAddress?: string;
   // Working directory of the server process.
   cwd?: string;
   // Started from one of the open workspace folders.
@@ -56,11 +58,23 @@ export interface LsofProcess {
   names: string[];
 }
 
+/**
+ * lsof's output, or an error. lsof exits 1 both when nothing matches and when it fails, so a failure
+ * is told apart by the explanation it writes to stderr. Warnings (on Linux, about file systems it
+ * can't look into) can come with every run and don't count.
+ */
+export function lsofOutput({ stdout, stderr, code }: ExecResult): string {
+  // Indented lines continue the message before them.
+  const problem = stderr.split('\n').find(line => /^\S/.test(line) && !/\bWARNING\b/.test(line));
+  if (code !== 0 && !stdout.trim() && problem) throw new Error(`lsof failed: ${problem.trim()}`);
+  return stdout;
+}
+
 // Runs lsof, throwing LSOF_MISSING if it isn't installed.
 async function lsof(args: string[]): Promise<string> {
-  const stdout = await execQuiet('lsof', args);
-  if (stdout === undefined) throw new Error(LSOF_MISSING);
-  return stdout;
+  const result = await execOutput('lsof', args);
+  if (!result) throw new Error(LSOF_MISSING);
+  return lsofOutput(result);
 }
 
 // Parses `lsof -F` output into one record per process.
@@ -111,16 +125,21 @@ export function realPath(dir: string): Promise<string> {
   return new Promise(resolve => fs.realpath.native(dir, (err, resolved) => resolve(err ? dir : resolved)));
 }
 
-// Groups listening sockets into one server per port, keeping only likely dev servers.
-// When several processes listen on a port, the server is the one the phone would reach.
-export function collectServers(processes: LsofProcess[], liveServerPort?: number): DetectedServer[] {
+/**
+ * Groups listening sockets into one server per port, keeping only likely dev servers.
+ * When several processes listen on a port, the server is the one the phone would reach.
+ * Live Server runs inside a VS Code extension host: this window's is `extensionHostPid`, which over
+ * Remote SSH, WSL or in a container is a plain node process, not one named after VS Code.
+ */
+export function collectServers(processes: LsofProcess[], liveServerPort?: number, extensionHostPid?: number): DetectedServer[] {
   const byPort = new Map<number, { pid: number; label: string; kind: DevServer['kind']; host: string }[]>();
   for (const { pid, command, names } of processes) {
     for (const name of names) {
       const address = parseListenAddress(name);
       if (!address || address.port < MIN_DEV_PORT) continue;
 
-      const kind = VS_CODE_PROCESS.test(command) && address.port === liveServerPort ? 'liveServer'
+      const inVsCode = pid === extensionHostPid || VS_CODE_PROCESS.test(command);
+      const kind = inVsCode && address.port === liveServerPort ? 'liveServer'
         : DOCKER_PROCESS.test(command) ? 'docker'
         : isDevProcess(command) ? 'process'
         : undefined;
@@ -133,9 +152,11 @@ export function collectServers(processes: LsofProcess[], liveServerPort?: number
     }
   }
   return [...byPort].map(([port, listeners]) => {
-    const reachable = listeners.find(l => isLanHost(l.host));
+    const reachable = listeners.find(l => WILDCARD_HOST.test(l.host)) ?? listeners.find(l => isLanHost(l.host));
     const { pid, label, kind } = reachable ?? listeners[0];
-    return { port, pid, label, kind, lanReachable: !!reachable };
+    const server: DetectedServer = { port, pid, label, kind, lanReachable: !!reachable };
+    if (reachable && !WILDCARD_HOST.test(reachable.host)) server.boundAddress = reachable.host;
+    return server;
   });
 }
 
@@ -148,10 +169,11 @@ export async function getWorkingDirs(pids: number[]): Promise<Map<number, string
 
 // `workspaceFolders` should already be real paths (see realPath).
 export async function findDevServers(
-  { liveServerPort, workspaceFolders = [] }: { liveServerPort?: number; workspaceFolders?: string[] } = {},
+  { liveServerPort, extensionHostPid, workspaceFolders = [] }:
+    { liveServerPort?: number; extensionHostPid?: number; workspaceFolders?: string[] } = {},
 ): Promise<DetectedServer[]> {
   const stdout = await lsof(['-iTCP', '-sTCP:LISTEN', '-nP', '-F', 'pcn']);
-  const servers = collectServers(parseLsof(stdout), liveServerPort);
+  const servers = collectServers(parseLsof(stdout), liveServerPort, extensionHostPid);
   const dirs = await getWorkingDirs([...new Set(servers.map(s => s.pid))]);
 
   return servers
@@ -220,17 +242,23 @@ export function unrelatedListeners(listening: number[], jobPids: number[], proce
 
 /**
  * The processes to stop so the server on `pid` stays stopped, as Ctrl+C in its terminal would:
- * the server plus the ancestors in its process group (npm, a watcher like nodemon, `next dev`…),
- * up to but not including the shell it was started from, which is returned too when there is one.
- * Never climbs into VS Code, init, or `protectedPids`.
+ * the server plus the ancestors in its process group that run its script (`scriptPids`, see
+ * runningSameScript) and the package manager that ran it, up to but not including the shell it was
+ * started from, which is returned too when there is one. Never climbs into VS Code, init,
+ * `protectedPids`, or a tool running several scripts at once (concurrently, turbo…).
  */
-export function serverJob(pid: number, processes: Map<number, ProcessInfo>, protectedPids: Set<number>): { pids: number[]; shellPid?: number } {
+export function serverJob(
+  pid: number, processes: Map<number, ProcessInfo>, protectedPids: Set<number>, scriptPids: Set<number>,
+): { pids: number[]; shellPid?: number } {
   const pids = [pid];
   for (let current = processes.get(pid); current;) {
     const parent = processes.get(current.ppid);
     if (!parent || parent.pid <= 1 || protectedPids.has(parent.pid) || VS_CODE_PROCESS.test(parent.name)) break;
     // A shell with job control runs each command in its own process group.
     if (parent.pgid !== current.pgid) return { pids, shellPid: SHELL.test(parent.name) ? parent.pid : undefined };
+    // `current` is the package manager that ran the script, so `parent` started it as part of something
+    // bigger, which may be running other servers too. Stopping the script ends `current` anyway.
+    if (!scriptPids.has(current.pid)) break;
     pids.push(parent.pid);
     current = parent;
   }

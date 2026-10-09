@@ -1,7 +1,7 @@
 // What Mobile Serve has made reachable from the network, so "Close Mobile" can undo it.
 import * as path from 'node:path';
 import * as vscode from 'vscode';
-import { canConnect } from './network.ts';
+import { canConnect, getLanAddresses } from './network.ts';
 import { listeningPids } from './servers.ts';
 import { restartLocally } from './restart.ts';
 import { restoreSettingInFile } from './settingsFile.ts';
@@ -96,7 +96,7 @@ function liveServerHostLocation(): { file: string; jsonPath: string[] } | undefi
 }
 
 // Forgets restarted servers that have stopped, or been restarted by hand.
-async function dropStoppedServers(): Promise<void> {
+export async function dropStoppedServers(): Promise<void> {
   const stopped: Share[] = [];
   for (const share of shares) {
     if (share.kind !== 'restarted') continue;
@@ -125,8 +125,8 @@ async function closeRestarted(share: Extract<Share, { kind: 'restarted' }>): Pro
 }
 
 async function closeLiveServer(share: Extract<Share, { kind: 'liveServer' }>): Promise<void> {
-  if (liveServerHost() !== '0.0.0.0') return;
-  await setLiveServerHost(share.previousHost);
+  // Already back when Live Server kept running after Mobile Serve was turned off (see restoreShares).
+  if (liveServerHost() === '0.0.0.0') await setLiveServerHost(share.previousHost);
   // The setting only applies when Live Server starts, so a running one has to stop.
   if (!(await listeningPids(share.port)).length) return;
   if ((await vscode.commands.getCommands(true)).includes(LIVE_SERVER_GO_OFFLINE)) {
@@ -166,17 +166,32 @@ async function stillShared(share: Share): Promise<boolean> {
   }
 }
 
-// Undoes everything Mobile Serve made reachable.
-export async function closeAll(): Promise<void> {
+// The close in progress. Clicking Close Mobile again while it runs would close (and restart) servers twice.
+let closing: Promise<void> | undefined;
+
+// Undoes everything Mobile Serve made reachable. Joins the close in progress, if there is one.
+export function closeAll(): Promise<void> {
+  closing ??= closeEach().finally(() => closing = undefined);
+  return closing;
+}
+
+// Closes every share, even when one fails, then reports what couldn't be closed.
+async function closeEach(): Promise<void> {
+  const failures: string[] = [];
   for (const share of [...shares]) {
     try {
       if (share.kind === 'restarted') await closeRestarted(share);
       else if (share.kind === 'liveServer') await closeLiveServer(share);
       else if (share.kind === 'task') closeTask(share);
       else await closeStatic(share);
+    } catch (err) {
+      failures.push(`port ${share.port} (${err instanceof Error ? err.message : String(err)})`);
     } finally {
       if (!(await stillShared(share))) setShares(shares.filter(s => s !== share));
     }
+  }
+  if (failures.length) {
+    throw new Error(`Couldn't stop sharing ${failures.join(', ')}. Click Close Mobile to try again.`);
   }
 }
 
@@ -185,6 +200,17 @@ function isShare(value: unknown): value is Share {
   return typeof share?.port === 'number' && (share.kind === 'liveServer' ||
     ((share.kind === 'task' || share.kind === 'static') && typeof share.dir === 'string') ||
     (share.kind === 'restarted' && typeof share.pid === 'number' && typeof share.dir === 'string' && typeof share.localCommand === 'string'));
+}
+
+// Whether Live Server, which runs in this extension host, still serves `port` to the network.
+async function liveServerOnNetwork(port: number): Promise<boolean> {
+  try {
+    if (!(await listeningPids(port)).includes(process.pid)) return false;
+  } catch {
+    return false;
+  }
+  const [address] = await getLanAddresses();
+  return !!address && await canConnect(address.address, port);
 }
 
 // Picks up shares from the last session: after a reload, or VS Code closing without undoing them.
@@ -203,6 +229,10 @@ async function restoreShares(saved: Share[]): Promise<void> {
       if (findTask(share.port) || await canConnect('127.0.0.1', share.port)) kept.push(share);
     } else if (share.kind === 'static') {
       // Stopped with the last window's extension host.
+    } else if (await liveServerOnNetwork(share.port)) {
+      // Mobile Serve was turned off (disabled, or updated) while Live Server kept running on the
+      // network, with the setting it started with. Close Mobile stops it.
+      kept.push(share);
     } else if (liveServerHost() === '0.0.0.0') {
       // Normally undone when VS Code closes (see undoOnShutdown), so VS Code was force quit or crashed.
       // Live Server stopped with it, so the setting can go back straight away.
@@ -222,7 +252,8 @@ async function restoreShares(saved: Share[]): Promise<void> {
 /**
  * Called from deactivate(). Live Server stops when VS Code closes, so its setting goes back too.
  * The settings API can't be relied on during shutdown, so the file is edited directly; if that
- * isn't possible, restoreShares undoes it on the next start.
+ * isn't possible, restoreShares undoes it on the next start. When only Mobile Serve stops (it was
+ * disabled or updated), Live Server keeps running: restoreShares then has Close Mobile offer to stop it.
  */
 export function undoOnShutdown(): void {
   const share = shares.find(s => s.kind === 'liveServer');

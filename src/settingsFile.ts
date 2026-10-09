@@ -11,7 +11,8 @@ export function restoreSetting(text: string, jsonPath: string[], expected: unkno
   const tree = parseTree(text);
   const node = tree && findNodeAtLocation(tree, jsonPath);
   if (!node || getNodeValue(node) !== expected) return undefined;
-  return applyEdits(text, modify(text, jsonPath, previous, { formattingOptions: { insertSpaces: true, tabSize: 4 } }));
+  // No formatting options: with them, removing a setting re-indents the lines around it.
+  return applyEdits(text, modify(text, jsonPath, previous, {}));
 }
 
 // restoreSetting on a file, synchronously. Resolves to whether the file was changed.

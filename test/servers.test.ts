@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert';
 import {
-  parseLsof, parseListenAddress, isDevProcess, isInside, isLanHost, collectServers, pickRestartedServer, parsePs, serverJob, unrelatedListeners,
+  lsofOutput, parseLsof, parseListenAddress, isDevProcess, isInside, isLanHost, collectServers, pickRestartedServer, parsePs, serverJob, unrelatedListeners,
   type DetectedServer,
 } from '../src/servers.ts';
 
@@ -98,10 +98,29 @@ test('serverJob stops the job up to the terminal shell, never VS Code', () => {
     '  302   301   300 node',
     '  400   100   100 node',
   ].join('\n'));
-  assert.deepStrictEqual(serverJob(302, processes, new Set()), { pids: [302, 301, 300], shellPid: 200 });
+  // 302 and the sh around it run the dev script; npm (300) ran it.
+  const script = new Set([302, 301]);
+  assert.deepStrictEqual(serverJob(302, processes, new Set(), script), { pids: [302, 301, 300], shellPid: 200 });
   // A server started by an extension shares VS Code's process group: only the server itself is stopped.
-  assert.deepStrictEqual(serverJob(400, processes, new Set()), { pids: [400] });
-  assert.deepStrictEqual(serverJob(302, processes, new Set([301])), { pids: [302] });
+  assert.deepStrictEqual(serverJob(400, processes, new Set(), new Set([400])), { pids: [400] });
+  assert.deepStrictEqual(serverJob(302, processes, new Set([301]), script), { pids: [302] });
+});
+
+test('serverJob leaves a tool running several scripts alone, with the servers it started', () => {
+  // A root `npm run dev` runs concurrently, which runs web's dev script (Vite) and the API.
+  const processes = parsePs([
+    '  100     1   100 /Applications/Visual Studio Code.app/Contents/MacOS/Code Helper',
+    '  200   100   200 -zsh',
+    '  300   200   300 node',
+    '  301   300   300 node',
+    '  310   301   300 node',
+    '  311   310   300 sh',
+    '  312   311   300 node',
+    '  320   301   300 node',
+    '  322   320   300 node',
+  ].join('\n'));
+  // Only Vite and its sh run web's dev script: npm (310) ran it, concurrently (301) started npm.
+  assert.deepStrictEqual(serverJob(312, processes, new Set(), new Set([312, 311])), { pids: [312, 311, 310] });
 });
 
 test('unrelatedListeners allows the server\'s job and its workers, nothing else', () => {
@@ -113,4 +132,34 @@ test('unrelatedListeners allows the server\'s job and its workers, nothing else'
   ].join('\n'));
   assert.deepStrictEqual(unrelatedListeners([302, 303], [302, 300], processes), []);
   assert.deepStrictEqual(unrelatedListeners([302, 500, 999], [302, 300], processes), [500, 999]);
+});
+
+test('lsofOutput tells a failure from nothing found', () => {
+  assert.strictEqual(lsofOutput({ stdout: '', stderr: '', code: 1 }), '');
+  assert.strictEqual(lsofOutput({ stdout: '4242\n', stderr: '', code: 0 }), '4242\n');
+  // Some pids gone, the rest reported.
+  assert.strictEqual(lsofOutput({ stdout: 'p1\nn/app\n', stderr: '', code: 1 }), 'p1\nn/app\n');
+  // Linux desktops print this on every run.
+  const warning = 'lsof: WARNING: can\'t stat() fuse.gvfsd-fuse file system /run/user/1000/gvfs\n      Output information may be incomplete.\n';
+  assert.strictEqual(lsofOutput({ stdout: '', stderr: warning, code: 1 }), '');
+  assert.throws(() => lsofOutput({ stdout: '', stderr: 'lsof: no pwd entry for UID 501\n', code: 1 }), /lsof failed: lsof: no pwd entry/);
+});
+
+test('collectServers records the one address a server is bound to', () => {
+  const servers = collectServers([
+    { pid: 1, command: 'node', names: ['10.0.0.5:5173'] },
+    // Also on all interfaces, so any address works.
+    { pid: 2, command: 'node', names: ['10.0.0.5:3000', '*:3000'] },
+  ]);
+  assert.deepStrictEqual(servers, [
+    { port: 5173, pid: 1, label: 'node', kind: 'process', lanReachable: true, boundAddress: '10.0.0.5' },
+    { port: 3000, pid: 2, label: 'node', kind: 'process', lanReachable: true },
+  ]);
+});
+
+test('collectServers finds Live Server in this window\'s extension host, even when it\'s named node', () => {
+  // Over Remote SSH the extension host is node; other node processes on the port stay dev servers.
+  const processes = [{ pid: 7, command: 'node', names: ['127.0.0.1:5500'] }, { pid: 8, command: 'node', names: ['127.0.0.1:3000'] }];
+  assert.deepStrictEqual(collectServers(processes, 5500, 7).map(s => [s.port, s.kind, s.label]), [[5500, 'liveServer', 'Live Server'], [3000, 'process', 'node']]);
+  assert.deepStrictEqual(collectServers(processes, 5500, 99).map(s => s.kind), ['process', 'process']);
 });

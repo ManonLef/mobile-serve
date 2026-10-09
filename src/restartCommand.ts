@@ -3,7 +3,7 @@
 import * as fs from 'node:fs/promises';
 import * as path from 'node:path';
 import { execQuiet } from './exec.ts';
-import { isInside, type DetectedServer } from './servers.ts';
+import { ancestors, isInside, type DetectedServer, type ProcessInfo } from './servers.ts';
 import { TOOLS, SAFE_SCRIPT_NAME, scriptTool, runScriptArgs } from './tools.ts';
 
 // Runtimes that run a tool's script file; the tool is the first argument after their options.
@@ -72,6 +72,8 @@ export interface ScriptEnv {
   event: string;
   // The package.json the script comes from.
   packageJson?: string;
+  // The package's name, for package managers that don't say which package.json.
+  packageName?: string;
   // Package manager that ran it.
   packageManager?: string;
 }
@@ -90,6 +92,7 @@ export function parseScriptEnv(entries: string[]): ScriptEnv | undefined {
   return {
     event,
     packageJson: env.get('npm_package_json') || undefined,
+    packageName: env.get('npm_package_name') || undefined,
     packageManager: agent && PACKAGE_MANAGERS.includes(agent) ? agent : undefined,
   };
 }
@@ -111,6 +114,30 @@ async function readEnvironment(pid: number): Promise<string[]> {
   }
   // macOS: -E appends the environment to the command line.
   return splitPsEnvironment((await execQuiet('ps', ['-E', '-ww', '-o', 'command=', '-p', String(pid)])) ?? '');
+}
+
+// Tells package.json scripts apart: the same for every process one script starts, undefined outside any.
+export function scriptKey(entries: string[]): string | undefined {
+  const env = parseScriptEnv(entries);
+  return env && `${env.event}\0${env.packageJson ?? env.packageName ?? ''}`;
+}
+
+/**
+ * The server on `pid` and its ancestors in the same process group that run the same package.json
+ * script, such as the `sh` around it. Their parent is the package manager that ran the script; what
+ * started that (concurrently, turbo, a root `npm run dev`…) runs another script.
+ */
+export async function runningSameScript(pid: number, processes: Map<number, ProcessInfo>): Promise<Set<number>> {
+  const same = new Set([pid]);
+  const key = scriptKey(await readEnvironment(pid));
+  if (!key) return same;
+  const group = processes.get(pid)?.pgid;
+  for (const ancestor of ancestors(pid, processes)) {
+    if (ancestor === pid) continue;
+    if (processes.get(ancestor)?.pgid !== group || scriptKey(await readEnvironment(ancestor)) !== key) break;
+    same.add(ancestor);
+  }
+  return same;
 }
 
 export function buildNetworkCommand({ script, body, program, packageManager }: {
