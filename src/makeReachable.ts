@@ -124,7 +124,11 @@ async function fixLiveServer(server: DevServer, intro: string): Promise<number |
 
   const fix = 'Fix Live Server Setting';
   const answer = await vscode.window.showWarningMessage(message,
-    { modal: true, detail: 'This makes Live Server reachable from any device on your network for this workspace.' },
+    {
+      modal: true,
+      detail: 'This makes Live Server reachable from any device on your network for this workspace. ' +
+        'The setting is saved in the workspace settings (usually .vscode/settings.json), so take care not to commit it.',
+    },
     fix, SHOW_ANYWAY);
   if (answer === fix) {
     await vscode.workspace.getConfiguration('liveServer.settings').update('host', '0.0.0.0', vscode.ConfigurationTarget.Workspace);

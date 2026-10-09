@@ -30,7 +30,8 @@ reach them. Mobile Serve tells you when that's the case and helps you fix it:
   It only offers this when the server was started with a `package.json` script (`npm run dev`,
   `pnpm dev`, …), that script runs just that one tool, and the tool is the one that's running.
 - **Live Server:** it can switch Live Server's host setting to `0.0.0.0` for this workspace. It never
-  changes the setting for all of VS Code, so open the folder you're serving first.
+  changes the setting for all of VS Code, so open the folder you're serving first. The setting is saved
+  in the workspace settings (usually `.vscode/settings.json`), so take care not to commit it.
 - **Docker:** published container ports are listed too. A port published on `127.0.0.1` only has to
   be published on all interfaces instead (`-p 3000:3000`).
 - **Anything else:** it shows example commands, and you can still show the QR code anyway.
