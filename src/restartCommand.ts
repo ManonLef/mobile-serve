@@ -1,23 +1,22 @@
 // Works out the command that restarts a dev server listening on all interfaces,
-// from the server's command line and the scripts in the project's package.json.
+// from the package.json script the server was started with.
 import * as fs from 'node:fs/promises';
 import * as path from 'node:path';
 import { execQuiet } from './exec.ts';
-import type { DevServer } from './servers.ts';
+import { isInside, type DetectedServer } from './servers.ts';
 
 interface HostFlag {
   // Matches the tool's name inside a package.json script.
   inScript: RegExp;
-  // Matches one word of the running process's command line, without directory or .js extension.
+  // Matches the running program's name, without directory or .js extension.
   inProcess: RegExp;
   // Makes the tool listen on all interfaces.
   flag: string;
 }
 
 // `names` is a regex alternation. In scripts it must be a whole word, so "vite" doesn't match "vite-app".
-// In the process it must be a whole program name, so a folder called "vite" doesn't count.
 const tool = (names: string, flag: string, processNames = names): HostFlag => ({
-  inScript: new RegExp(`(?<![\\w-])(?:${names})(?![\\w-])`),
+  inScript: new RegExp(`(?<![\\w/.-])(?:${names})(?![\\w/.-])`),
   inProcess: new RegExp(`^(?:${processNames})$`),
   flag,
 });
@@ -31,13 +30,14 @@ const HOST_FLAGS: HostFlag[] = [
   tool('ng', '--host 0.0.0.0'),
   tool('webpack|webpack-dev-server|vue-cli-service', '--host 0.0.0.0'),
 ];
-const PREFERRED_SCRIPTS = ['dev', 'start', 'serve'];
-// Script names end up in a shell command, so anything else is never offered.
-const SAFE_SCRIPT_NAME = /^[\w:.-]+$/;
+// Script names end up in a shell command, so anything else is never offered. A leading "-" would be read as an option.
+const SAFE_SCRIPT_NAME = /^\w[\w:.-]*$/;
 // The flag is appended to the script, so it only reaches the tool when the tool is the script's
 // only command. Scripts that chain commands, run several at once, or already set a host are skipped.
-const COMPOUND_SCRIPT = /[;&|]|(?<![\w-])(concurrently|run-p|run-s|npm-run-all2?|nodemon|turbo|nx|lerna)(?![\w-])/;
+const COMPOUND_SCRIPT = /[;&|`$<>\n]|(?<![\w-])(concurrently|run-p|run-s|npm-run-all2?|nodemon|turbo|nx|lerna)(?![\w-])/;
 const SETS_HOST = /(?<![\w-])(--host|--hostname|-H)(?![\w-])/;
+// Runtimes that run a tool's script file; the tool is the first argument after their options.
+const RUNTIMES = new Set(['node', 'nodejs', 'bun', 'deno']);
 const PACKAGE_MANAGERS = ['npm', 'pnpm', 'yarn', 'bun'];
 const LOCKFILES = [
   ['pnpm-lock.yaml', 'pnpm'],
@@ -47,35 +47,72 @@ const LOCKFILES = [
   ['package-lock.json', 'npm'],
 ];
 
-// Program names in a command line such as "node /app/node_modules/vite/bin/vite.js --port 3000".
-function programNames(commandLine: string): string[] {
-  return commandLine.split(/\s+/).map(word => path.basename(word).replace(/\.[cm]?js$/, ''));
+// The program a command line runs, such as "vite" for "node /app/node_modules/vite/bin/vite.js --port 3000".
+export function runningProgram(commandLine: string): string | undefined {
+  const words = commandLine.trim().split(/\s+/);
+  const name = (word: string) => path.basename(word).replace(/\.[cm]?js$/, '');
+  let i = 0;
+  if (RUNTIMES.has(name(words[0]))) {
+    i = 1;
+    while (words[i]?.startsWith('-')) i++;
+  }
+  return words[i] ? name(words[i]) : undefined;
 }
 
-function scriptRank(name: string): number {
-  const i = PREFERRED_SCRIPTS.indexOf(name);
-  return i === -1 ? PREFERRED_SCRIPTS.length : i;
+// What npm, pnpm, yarn and bun put in the environment of everything a package.json script starts.
+export interface ScriptEnv {
+  // The script's name.
+  event: string;
+  // The package.json the script comes from.
+  packageJson?: string;
+  // Package manager that ran it.
+  packageManager?: string;
 }
 
-export function buildNetworkCommand({ scripts, processCommand, packageManager }: {
-  scripts: Record<string, unknown>;
+// Reads ScriptEnv from `NAME=value` entries. Later entries win, as in a real environment.
+export function parseScriptEnv(entries: string[]): ScriptEnv | undefined {
+  const env = new Map<string, string>();
+  for (const entry of entries) {
+    const eq = entry.indexOf('=');
+    if (eq > 0) env.set(entry.slice(0, eq), entry.slice(eq + 1));
+  }
+  const event = env.get('npm_lifecycle_event');
+  if (!event) return;
+  // e.g. "pnpm/9.1.0 npm/? node/v20.11.0 darwin arm64".
+  const agent = env.get('npm_config_user_agent')?.split('/')[0];
+  return {
+    event,
+    packageJson: env.get('npm_package_json') || undefined,
+    packageManager: agent && PACKAGE_MANAGERS.includes(agent) ? agent : undefined,
+  };
+}
+
+// The environment of a process owned by this user, as NAME=value entries.
+async function readEnvironment(pid: number): Promise<string[]> {
+  if (process.platform === 'linux') {
+    try {
+      return (await fs.readFile(`/proc/${pid}/environ`, 'utf8')).split('\0');
+    } catch {
+      return [];
+    }
+  }
+  // macOS: -E appends the environment to the command line. Values can't be told apart from
+  // arguments that contain spaces, but the variables read here never contain any.
+  return ((await execQuiet('ps', ['-E', '-ww', '-o', 'command=', '-p', String(pid)])) ?? '').split(/\s+/);
+}
+
+export function buildNetworkCommand({ script, body, processCommand, packageManager }: {
+  script: string;
+  body: unknown;
   processCommand: string;
   packageManager: string;
 }): string | undefined {
-  // Only restart with a script that runs the same tool as the server that's running. Otherwise a
+  // Only restart when the script runs the same tool as the server that's running. Otherwise a
   // Laravel or Express server would get replaced by the project's Vite asset server.
-  const programs = programNames(processCommand);
-  const runningTool = HOST_FLAGS.find(h => programs.some(name => h.inProcess.test(name)));
-  if (!runningTool) return;
-
-  const script = Object.keys(scripts)
-    .filter(name => SAFE_SCRIPT_NAME.test(name))
-    .sort((a, b) => scriptRank(a) - scriptRank(b))
-    .find(name => {
-      const body = scripts[name];
-      return typeof body === 'string' && runningTool.inScript.test(body) && !COMPOUND_SCRIPT.test(body) && !SETS_HOST.test(body);
-    });
-  if (!script) return;
+  const program = runningProgram(processCommand);
+  const runningTool = program && HOST_FLAGS.find(h => h.inProcess.test(program));
+  if (!runningTool || !SAFE_SCRIPT_NAME.test(script) || typeof body !== 'string') return;
+  if (!runningTool.inScript.test(body) || COMPOUND_SCRIPT.test(body) || SETS_HOST.test(body)) return;
 
   return packageManager === 'npm'
     ? `npm run ${script} -- ${runningTool.flag}`
@@ -109,21 +146,31 @@ export async function detectPackageManager(dir: string): Promise<string> {
   }
 }
 
-export async function findNetworkCommand(server: DevServer): Promise<{ command: string; dir: string } | undefined> {
-  if (!server.cwd || !server.inProject || !server.pid) return;
+/**
+ * The command that runs the server's own package.json script again with the tool's host flag,
+ * and the folder to run it in. Undefined unless the server was started by a script.
+ */
+export async function findNetworkCommand(server: DetectedServer): Promise<{ command: string; dir: string } | undefined> {
+  if (!server.cwd || !server.inProject) return;
+  const env = parseScriptEnv(await readEnvironment(server.pid));
+  if (!env) return;
+  const dir = env.packageJson ? path.dirname(env.packageJson) : server.cwd;
+  // A variable inherited from elsewhere (VS Code itself started by a script, say) points away from the server.
+  if (!isInside(server.cwd, dir)) return;
+
   let scripts: unknown;
   try {
-    scripts = JSON.parse(await fs.readFile(path.join(server.cwd, 'package.json'), 'utf8')).scripts;
+    scripts = JSON.parse(await fs.readFile(path.join(dir, 'package.json'), 'utf8')).scripts;
   } catch {
     return;
   }
-  if (!scripts || typeof scripts !== 'object') return;
+  if (!scripts || typeof scripts !== 'object' || !Object.hasOwn(scripts, env.event)) return;
 
-  const processCommand = ((await execQuiet('ps', ['-o', 'command=', '-p', String(server.pid)])) ?? '').trim();
   const command = buildNetworkCommand({
-    scripts: scripts as Record<string, unknown>,
-    processCommand,
-    packageManager: await detectPackageManager(server.cwd),
+    script: env.event,
+    body: (scripts as Record<string, unknown>)[env.event],
+    processCommand: ((await execQuiet('ps', ['-o', 'command=', '-p', String(server.pid)])) ?? '').trim(),
+    packageManager: env.packageManager ?? await detectPackageManager(dir),
   });
-  return command ? { command, dir: server.cwd } : undefined;
+  return command ? { command, dir } : undefined;
 }

@@ -1,7 +1,7 @@
 // Helps when the chosen server only listens on localhost, so a phone can't reach it.
 import * as vscode from 'vscode';
 import {
-  findDevServers, listeningPids, listProcesses, ancestors, serverJob, getWorkingDirs, pickRestartedServer,
+  findDevServers, listeningPids, listProcesses, ancestors, serverJob, getWorkingDirs, pickRestartedServer, isDetected,
   type DevServer, type DetectedServer,
 } from './servers.ts';
 import { findNetworkCommand } from './restartCommand.ts';
@@ -121,14 +121,15 @@ export async function makeReachable(server: DevServer): Promise<number | undefin
   }
 
   // Restarting runs a script from the project's package.json, so only offer it in trusted workspaces.
-  const restart = vscode.workspace.isTrusted ? await findNetworkCommand(server) : undefined;
-  if (restart && server.pid) {
+  const detected = isDetected(server) ? server : undefined;
+  const restart = detected && vscode.workspace.isTrusted ? await findNetworkCommand(detected) : undefined;
+  if (detected && restart) {
     const restartServer = 'Restart Server';
     const answer = await vscode.window.showWarningMessage(
       `${intro} Restart it with “${restart.command}” to make it reachable.`,
       { modal: true, detail: 'Restarting stops the current server, as Ctrl+C in its terminal would, and starts it again with that command.' },
       restartServer, SHOW_ANYWAY);
-    if (answer === restartServer) return restartOnNetwork({ ...server, pid: server.pid }, restart);
+    if (answer === restartServer) return restartOnNetwork(detected, restart);
     return answer === SHOW_ANYWAY ? server.port : undefined;
   }
 

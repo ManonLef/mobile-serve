@@ -27,8 +27,8 @@ reach them. Mobile Serve tells you when that's the case and helps you fix it:
 - **Vite, Astro, Nuxt, Next.js, Angular CLI, webpack-dev-server and Vue CLI:** it reads your
   `package.json`, shows the command that restarts the server on your network
   (for example `npm run dev -- --host`), and can restart it for you, in the terminal it was running in.
-  It only offers this when the running server and the script use the same tool, and the script runs
-  just that tool.
+  It only offers this when the server was started with a `package.json` script (`npm run dev`,
+  `pnpm dev`, …), that script runs just that one tool, and the tool is the one that's running.
 - **Live Server:** it can switch Live Server's host setting to `0.0.0.0` for this workspace. It never
   changes the setting for all of VS Code, so open the folder you're serving first.
 - **Docker:** published container ports are listed too. A port published on `127.0.0.1` only has to

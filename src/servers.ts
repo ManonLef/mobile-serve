@@ -45,6 +45,10 @@ export interface DevServer {
 // A server found by lsof, so its pid is always known.
 export type DetectedServer = DevServer & { pid: number };
 
+export function isDetected(server: DevServer): server is DetectedServer {
+  return server.pid !== undefined;
+}
+
 export interface LsofProcess {
   pid: number;
   command: string;
