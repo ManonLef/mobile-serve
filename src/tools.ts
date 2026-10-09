@@ -57,15 +57,31 @@ export const SAFE_SCRIPT_NAME = /^\w[\w:.-]*$/;
 // only command. Scripts that chain commands, run several at once, or already set a host are skipped.
 export const COMPOUND_SCRIPT = /[;&|`$<>\n]|(?<![\w-])(concurrently|run-p|run-s|npm-run-all2?|nodemon|turbo|nx|lerna)(?![\w-])/;
 export const SETS_HOST = /(?<![\w-])(--host|--hostname|-H)(?![\w-])/;
+// The host flag and the value it's given, if any ("--host", "--host 0.0.0.0", "-H=::").
+const HOST_VALUE = /(?<![\w-])(?:--hostname|--host|-H)(?![\w-])(?:[ =](?!-)(\S+))?/;
+// Values that listen on every interface. No value is Vite's, Astro's and Nuxt's bare --host.
+const ALL_INTERFACES = new Set([undefined, '0.0.0.0', '::', '[::]']);
 
-// The tool a script runs, when flags appended to it would reach that tool.
-export function scriptTool(body: unknown): Tool | undefined {
-  if (typeof body !== 'string' || COMPOUND_SCRIPT.test(body) || SETS_HOST.test(body)) return;
+// The tool a script runs, when flags appended to it would reach that tool. Hosts aside.
+function toolIn(body: unknown): Tool | undefined {
+  if (typeof body !== 'string' || COMPOUND_SCRIPT.test(body)) return;
   return TOOLS.find(t => t.inScript.test(body));
 }
 
-// The tool whose dev server a script starts, when flags appended to it would reach that tool.
-export function devServerTool(body: unknown): Tool | undefined {
-  const tool = scriptTool(body);
-  return tool?.devScript.test(body as string) ? tool : undefined;
+// The tool a script runs, when flags appended to it would reach that tool and it doesn't set a host yet.
+export function scriptTool(body: unknown): Tool | undefined {
+  return typeof body === 'string' && !SETS_HOST.test(body) ? toolIn(body) : undefined;
+}
+
+/**
+ * The tool whose dev server a script starts, when flags appended to it would reach that tool.
+ * `setsHost` is set when the script already makes it listen on every interface; a script that keeps
+ * it on localhost, or on one address, isn't used.
+ */
+export function devServerTool(body: unknown): { tool: Tool; setsHost: boolean } | undefined {
+  const tool = toolIn(body);
+  if (!tool?.devScript.test(body as string)) return;
+  const host = HOST_VALUE.exec(body as string);
+  if (host && !ALL_INTERFACES.has(host[1])) return;
+  return { tool, setsHost: !!host };
 }

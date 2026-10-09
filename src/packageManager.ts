@@ -40,5 +40,5 @@ export async function detectPackageManager(dir: string): Promise<string> {
 
 // The arguments that run `script` with `extra` passed on to it. npm needs "--" in between.
 export function runScriptArgs(packageManager: string, script: string, extra: string[]): string[] {
-  return packageManager === 'npm' ? ['run', script, '--', ...extra] : ['run', script, ...extra];
+  return packageManager === 'npm' && extra.length ? ['run', script, '--', ...extra] : ['run', script, ...extra];
 }

@@ -23,4 +23,5 @@ test('detects the package manager from the monorepo root and the packageManager 
 test('runScriptArgs passes flags to the script, with "--" for npm', () => {
   assert.deepStrictEqual(runScriptArgs('npm', 'dev', ['--host']), ['run', 'dev', '--', '--host']);
   assert.deepStrictEqual(runScriptArgs('pnpm', 'dev', ['--host']), ['run', 'dev', '--host']);
+  assert.deepStrictEqual(runScriptArgs('npm', 'dev', []), ['run', 'dev']);
 });

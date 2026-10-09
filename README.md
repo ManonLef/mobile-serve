@@ -31,6 +31,7 @@ Mobile Serve looks at each open workspace folder and starts it the way that suit
   `package.json`'s `dev` script (or `start`, or `serve`) in a terminal, with the flags that make the
   tool listen on your network, for example `npm run dev -- --host --port 5173 --strictPort`. It uses
   the tool's usual port when it's free, so the address on your phone stays the same between runs.
+  A script that already listens on your network (`vite --host`, `next dev -H 0.0.0.0`) only gets the port.
   Close Mobile, Ctrl+C or closing the terminal stops it. The script has to start the tool's dev
   server (`vite`, `next dev`, `ng serve`, `webpack serve`…): scripts that build or run a production
   server (`next start`, `vite preview`) aren't offered.

@@ -23,7 +23,8 @@ const PORT_ATTEMPTS = 20;
 
 export type StartPlan =
   // Runs the package.json script in `dir` (see scriptArgs).
-  | { kind: 'script'; dir: string; script: string; packageManager: string; tool: Tool; fixedPort?: number }
+  // `setsHost` when the script already listens on every interface.
+  | { kind: 'script'; dir: string; script: string; packageManager: string; tool: Tool; fixedPort?: number; setsHost?: boolean }
   // Serves `dir` with the static server.
   | { kind: 'static'; dir: string };
 
@@ -51,12 +52,15 @@ export async function planStart(dir: string): Promise<StartPlan | undefined> {
     : [];
   for (const script of names) {
     const body = (scripts as Record<string, unknown>)[script];
-    const tool = devServerTool(body);
-    if (!tool || !SAFE_SCRIPT_NAME.test(script) || BUILDS.test(body as string)) continue;
+    const found = devServerTool(body);
+    if (!found || !SAFE_SCRIPT_NAME.test(script) || BUILDS.test(body as string)) continue;
     const port = SETS_PORT.exec(body as string);
     // A port set some other way (from a variable, say) can't be known in advance.
     if (port && !port[1]) continue;
-    return { kind: 'script', dir, script, packageManager: await detectPackageManager(dir), tool, fixedPort: port ? Number(port[1]) : undefined };
+    return {
+      kind: 'script', dir, script, packageManager: await detectPackageManager(dir), tool: found.tool,
+      fixedPort: port ? Number(port[1]) : undefined, setsHost: found.setsHost || undefined,
+    };
   }
   const bodies = names.map(name => (scripts as Record<string, unknown>)[name]);
   if (!bodies.every(body => typeof body === 'string' && STATIC_SERVER_SCRIPT.test(body.trim()))) return undefined;
@@ -65,7 +69,7 @@ export async function planStart(dir: string): Promise<StartPlan | undefined> {
 
 // The arguments to give the package manager so the script listens on the network, on `port`.
 export function scriptArgs(plan: Extract<StartPlan, { kind: 'script' }>, port: number): string[] {
-  const extra = [...plan.tool.hostArgs, ...(plan.fixedPort === undefined ? plan.tool.portArgs(port) : [])];
+  const extra = [...(plan.setsHost ? [] : plan.tool.hostArgs), ...(plan.fixedPort === undefined ? plan.tool.portArgs(port) : [])];
   return runScriptArgs(plan.packageManager, plan.script, extra);
 }
 
