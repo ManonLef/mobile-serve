@@ -8,8 +8,6 @@ const DEV_PROCESS_NAMES = new Set([
   'node', 'nodejs', 'python', 'ruby', 'php', 'php-fpm', 'deno', 'bun',
   'java', 'dotnet', 'hugo', 'caddy', 'nginx', 'httpd',
 ]);
-// Docker's port forwarders. macOS cuts process names at 16 characters, hence the prefixes.
-const DOCKER_PROCESS = /^(com\.docker|docker-proxy|vpnkit)/i;
 // A listening address the phone can use: a wildcard, or a specific IPv4 address that isn't
 // loopback or link-local. The URLs shown are IPv4, so a server bound to one IPv6 address doesn't count.
 const WILDCARD_HOST = /^(\*|0\.0\.0\.0|\[::\])$/;
@@ -26,11 +24,10 @@ export interface DevServer {
   port: number;
   // Missing for a port typed in by hand.
   pid?: number;
-  // Process name, "Live Server", "Docker" or "Manual".
+  // Process name, "Live Server" or "Manual".
   label: string;
-  // A dev server process, the Live Server extension inside VS Code, a port Docker publishes,
-  // or a port typed in by hand.
-  kind: 'process' | 'liveServer' | 'docker' | 'manual';
+  // A dev server process, the Live Server extension inside VS Code, or a port typed in by hand.
+  kind: 'process' | 'liveServer' | 'manual';
   // Listens on an address the phone can use. Unknown for a port typed in by hand.
   lanReachable?: boolean;
   // The one IPv4 address it listens on, when it doesn't listen on all of them.
@@ -125,12 +122,11 @@ export function collectServers(processes: LsofProcess[], liveServerPort?: number
       if (!address || address.port < MIN_DEV_PORT) continue;
 
       const kind = pid === extensionHostPid && address.port === liveServerPort ? 'liveServer'
-        : DOCKER_PROCESS.test(command) ? 'docker'
         : isDevProcess(command) ? 'process'
         : undefined;
       if (!kind) continue;
 
-      const label = kind === 'liveServer' ? 'Live Server' : kind === 'docker' ? 'Docker' : command;
+      const label = kind === 'liveServer' ? 'Live Server' : command;
       const listeners = byPort.get(address.port) ?? [];
       listeners.push({ pid, label, kind, host: address.host });
       byPort.set(address.port, listeners);
@@ -164,7 +160,6 @@ export async function findDevServers(
   return servers
     .map(server => ({ ...server, cwd: dirs.get(server.pid) }))
     // Apps opened from the Dock or Finder (pgAdmin, Spotify…) run from "/"; dev servers never do.
-    // Docker Desktop does too, but forwards the ports of containers, which often are dev servers.
     .filter(server => server.kind !== 'process' || server.cwd !== '/')
     .map(server => ({
       ...server,
