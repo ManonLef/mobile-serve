@@ -13,7 +13,8 @@ test('execQuiet resolves to undefined for a program that isn\'t installed', asyn
   assert.strictEqual(await execQuiet('mobile-serve-no-such-program', []), undefined);
 });
 
-test('execQuiet rejects when the program is killed', async () => {
+// Windows has no signals: a process that kills itself there just exits with code 1.
+test('execQuiet rejects when the program is killed', { skip: process.platform === 'win32' && 'no signals on Windows' }, async () => {
   await assert.rejects(execQuiet(process.execPath, ['-e', 'process.kill(process.pid, "SIGKILL")']));
 });
 
