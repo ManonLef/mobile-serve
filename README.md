@@ -3,23 +3,40 @@
 A small extension that gives you a QR code and URL to use on your mobile phone to test your project
 in real time, without having to look up your computer's IP address or dev server port.
 
-This extension does *not* show a simulated phone inside VS Code. It finds the dev server running on
-your computer, works out the address your phone can reach it on over Wi-Fi, and shows that address
-as a QR code. Scan the code with your phone's camera and the page opens in your phone's own browser:
+This extension does *not* show a simulated phone inside VS Code. Like Live Server's **Go Live**, it
+starts your project on your computer (or uses the dev server you already have running), works out the
+address your phone can reach it on over Wi-Fi, and shows that address as a QR code. Scan the code with your phone's camera and the page opens in your phone's own browser:
 real touch, real screen size, real Safari or Chrome.
 
 ## Instructions
 
-1. Start your dev server as usual (`npm run dev`, Live Server's **Go Live**, `python3 -m http.server`, …).
-2. Click **📱 Mobile** in the status bar, or run **Mobile Serve: Show Phone URL** from the Command Palette.
-3. Pick the server from the list. Servers started from the open project are listed first.
-4. Scan the QR code with your phone. Your phone has to be on the same Wi-Fi network as your computer.
-5. When you're done, click **📱 Close Mobile** in the status bar. It shows up when Mobile Serve has
-   made a server reachable from your network (see below), and puts it back to this computer only.
+1. Click **📱 Mobile** in the status bar, or run **Mobile Serve: Show Phone URL** from the Command Palette.
+2. Pick **Start ‹your project› for your phone** (see below). If your dev server is already running,
+   you can pick it under **Running in this project** instead, or enter its port.
+3. Scan the QR code with your phone. Your phone has to be on the same Wi-Fi network as your computer.
+4. When you're done, click **📱 Close Mobile** in the status bar. It stops what Mobile Serve started,
+   and puts back anything it made reachable from your network.
 
 The panel also shows whether the server is listening on that address (checked from your computer,
 so a firewall can still block the phone), and lists other addresses to try
 if your computer is on more than one network.
+
+## Starting your project
+
+Mobile Serve looks at each open workspace folder and starts it the way that suits it:
+
+- **Vite, Astro, Nuxt, Next.js, Angular CLI, webpack-dev-server and Vue CLI:** it runs your
+  `package.json`'s `dev` script (or `start`, or `serve`) in a terminal, with the flags that make the
+  tool listen on your network, for example `npm run dev -- --host --port 5173 --strictPort`. It uses
+  the tool's usual port when it's free, so the address on your phone stays the same between runs.
+  Close Mobile, Ctrl+C or closing the terminal stops it.
+- **Plain HTML, CSS and JavaScript:** a folder with an `index.html` and no build step is served by
+  Mobile Serve itself, on port 5600. Like Go Live, it reloads the page on your phone when you save,
+  and swaps the stylesheets in place when only CSS changed. A `package.json` whose only server is a
+  static file server (`live-server`, `http-server`, `serve`…) counts as plain HTML too.
+
+Projects it doesn't know how to start (a script that runs several commands, Django, Rails…) can
+still be shown: start them yourself and pick them from the list, or enter the port.
 
 ## When the server only listens on localhost
 
@@ -34,8 +51,8 @@ reach them. Mobile Serve tells you when that's the case and helps you fix it:
 - **Live Server:** it can switch Live Server's host setting to `0.0.0.0` for this workspace. It never
   changes the setting for all of VS Code, so open the folder you're serving first. The setting is saved
   in the workspace settings (usually `.vscode/settings.json`), so take care not to commit it.
-- **Docker:** published container ports are listed too. A port published on `127.0.0.1` only has to
-  be published on all interfaces instead (`-p 3000:3000`).
+- **Docker:** container ports aren't tied to a project folder, so enter the port. A port published on
+  `127.0.0.1` only has to be published on all interfaces instead (`-p 3000:3000`).
 - **Anything else:** it shows example commands, and you can still show the QR code anyway.
 
 ## Things that work differently on a phone
@@ -64,7 +81,8 @@ an API or backend sometimes need a small change:
 
 - VS Code 1.82 or newer.
 - macOS or Linux to detect running servers (it uses `lsof`, which some Linux distributions don't
-  install by default). On Windows you can still type the port in by hand.
+  install by default). On Windows, starting your project works, and you can type in the port of a
+  server that's already running.
 - Your phone and computer on the same network. On macOS, allow incoming connections if the
   firewall asks.
 - With Remote SSH, WSL or Dev Containers, the addresses shown belong to the remote machine, which
@@ -75,16 +93,18 @@ an API or backend sometimes need a small change:
 Making a server reachable from your phone makes it reachable from every device on that network.
 Avoid doing this on public or untrusted Wi-Fi, and stop sharing when you're done: dev servers aren't
 built to face a network, and Live Server serves every file in the folder, `.env` and `.git` included.
+Mobile Serve's own server for plain HTML never serves files or folders whose name starts with a dot,
+nor anything outside the folder.
 
-**Close Mobile** undoes what Mobile Serve changed: it restarts a server it restarted with the original
-script, and puts Live Server's host setting back (stopping Live Server if it's running). A server
+**Close Mobile** undoes what Mobile Serve changed: it stops a server it started, restarts a server it
+restarted with the original script, and puts Live Server's host setting back (stopping Live Server if it's running). A server
 that was already reachable before Mobile Serve touched it is left alone; stop it yourself.
 
 Closing VS Code puts Live Server's setting back too, since Live Server stops with it. If VS Code was
 force quit or crashed, that happens the next time you open the workspace.
 
-In Restricted Mode (untrusted workspaces) the extension won't restart servers for you, because
-that runs scripts from the project's `package.json`.
+In Restricted Mode (untrusted workspaces) the extension won't start or restart servers for you,
+because that runs scripts from the project's `package.json`. Plain HTML folders can still be served.
 
 ## Licenses
 
