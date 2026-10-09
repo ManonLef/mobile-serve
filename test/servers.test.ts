@@ -40,20 +40,20 @@ test('isDevProcess matches whole names, not prefixes', () => {
   }
 });
 
-test('collectServers keeps dev servers, Live Server and Docker, and works out reachability', () => {
+test('collectServers keeps dev servers and Live Server, and works out reachability', () => {
   const servers = collectServers([
     { pid: 1, command: 'node', names: ['127.0.0.1:5173', '[::1]:5173'] },
     { pid: 2, command: 'python3', names: ['*:8000'] },
     { pid: 3, command: 'Code Helper (Plugin)', names: ['127.0.0.1:5500', '127.0.0.1:9229'] },
     { pid: 4, command: 'node', names: ['*:80'] },
     { pid: 5, command: 'Google Chrome', names: ['127.0.0.1:9222'] },
+    // Docker's port forwarder isn't tied to a project folder, so its ports are entered by hand.
     { pid: 6, command: 'com.docker.backe', names: ['*:3306'] },
   ], 5500, 3);
   assert.deepStrictEqual(servers, [
     { port: 5173, pid: 1, label: 'node', kind: 'process', lanReachable: false },
     { port: 8000, pid: 2, label: 'python3', kind: 'process', lanReachable: true },
     { port: 5500, pid: 3, label: 'Live Server', kind: 'liveServer', lanReachable: false },
-    { port: 3306, pid: 6, label: 'Docker', kind: 'docker', lanReachable: true },
   ]);
 });
 

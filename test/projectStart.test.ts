@@ -33,6 +33,19 @@ test('runs the dev script with the tool\'s host and port flags', async () => {
   });
 });
 
+test('only adds the port when the script already listens on every interface', async () => {
+  await project(scripts({ dev: 'vite --host' }), async dir => {
+    assert.strictEqual(commandFor(await planStart(dir), 5173), 'npm run dev -- --port 5173 --strictPort');
+  });
+  // Nothing left to add.
+  await project(scripts({ dev: 'next dev -H 0.0.0.0 -p 4000' }), async dir => {
+    assert.strictEqual(commandFor(await planStart(dir), 4000), 'npm run dev');
+  });
+  await project(scripts({ dev: 'vite --host localhost' }), async dir => {
+    assert.strictEqual(await planStart(dir), undefined);
+  });
+});
+
 test('falls back to start or serve when dev isn\'t a server it knows', async () => {
   await project(scripts({ dev: 'vite build --watch', start: 'ng serve' }), async dir => {
     assert.strictEqual(commandFor(await planStart(dir), 4200), 'npm run start -- --host 0.0.0.0 --port 4200');

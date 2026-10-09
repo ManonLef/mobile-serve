@@ -61,6 +61,9 @@ async function site(): Promise<{ root: string; cleanup: () => Promise<void> }> {
   await fs.symlink(path.join(root, '.git'), path.join(root, 'public'));
   await fs.writeFile(path.join(parent, 'outside.txt'), 'outside');
   await fs.symlink(path.join(parent, 'outside.txt'), path.join(root, 'link.txt'));
+  // A folder whose index.html leads out of the folder.
+  await fs.mkdir(path.join(root, 'linked'));
+  await fs.symlink(path.join(parent, 'outside.txt'), path.join(root, 'linked', 'index.html'));
   return { root, cleanup: () => fs.rm(parent, { recursive: true, force: true }) };
 }
 
@@ -110,7 +113,7 @@ test('never serves hidden files, or files outside the folder', async () => {
   const { root, cleanup } = await site();
   const server = await startStaticServer(root, 0);
   try {
-    for (const url of ['/.env', '/%2e%2e/outside.txt', '/../outside.txt', '/link.txt', '/public/config', '/missing.html']) {
+    for (const url of ['/.env', '/%2e%2e/outside.txt', '/../outside.txt', '/link.txt', '/linked/', '/public/config', '/missing.html']) {
       const res = await get(server, url);
       assert.strictEqual(res.status, 404, url);
       assert.ok(!/SECRET|outside/.test(res.body), url);

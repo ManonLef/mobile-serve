@@ -18,3 +18,13 @@ test('devServerTool only accepts scripts that start a dev server', () => {
   for (const script of devServers) assert.ok(devServerTool(script), script);
   for (const script of others) assert.strictEqual(devServerTool(script), undefined, script);
 });
+
+test('devServerTool accepts a host on every interface, not one that keeps the server local', () => {
+  const everyInterface = ['vite --host', 'vite --host --open', 'vite --host 0.0.0.0', 'astro dev --host=0.0.0.0',
+    'next dev -H 0.0.0.0', 'ng serve --host ::', 'nuxt dev --hostname 0.0.0.0'];
+  for (const script of everyInterface) assert.strictEqual(devServerTool(script)?.setsHost, true, script);
+  assert.strictEqual(devServerTool('vite')?.setsHost, false);
+  for (const script of ['vite --host localhost', 'vite --host 127.0.0.1', 'next dev -H 192.168.1.20']) {
+    assert.strictEqual(devServerTool(script), undefined, script);
+  }
+});

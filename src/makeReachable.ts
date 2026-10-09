@@ -41,13 +41,6 @@ async function fixLiveServer(server: DevServer, intro: string): Promise<number |
 export async function makeReachable(server: DevServer): Promise<number | undefined> {
   const intro = 'This server only listens on localhost, so your phone can\'t reach it.';
   if (server.kind === 'liveServer') return fixLiveServer(server, intro);
-  if (server.kind === 'docker') {
-    const answer = await vscode.window.showWarningMessage(
-      `${intro} The container's port is published on 127.0.0.1 only. Publish it on all interfaces ` +
-      '(for example “-p 3000:3000” instead of “-p 127.0.0.1:3000:3000”) and restart the container.',
-      { modal: true }, SHOW_ANYWAY);
-    return answer === SHOW_ANYWAY ? server.port : undefined;
-  }
 
   // Restarting runs a script from the project's package.json, so only offer it in trusted workspaces.
   const detected = isDetected(server) ? server : undefined;
