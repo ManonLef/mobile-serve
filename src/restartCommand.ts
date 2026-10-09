@@ -4,7 +4,8 @@ import * as fs from 'node:fs/promises';
 import * as path from 'node:path';
 import { execQuiet } from './exec.ts';
 import { PACKAGE_MANAGERS, detectPackageManager, runScriptArgs } from './packageManager.ts';
-import { ancestors, isInside, type DetectedServer, type ProcessInfo } from './servers.ts';
+import { ancestors, type ProcessInfo } from './processes.ts';
+import { isInside, type DetectedServer } from './servers.ts';
 import { TOOLS, SAFE_SCRIPT_NAME, scriptTool } from './tools.ts';
 
 // Runtimes that run a tool's script file; the tool is the first argument after their options.

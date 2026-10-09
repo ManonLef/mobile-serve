@@ -1,7 +1,7 @@
 // Finds dev servers listening on this machine, using lsof (macOS and Linux only).
 import * as fs from 'node:fs';
 import * as path from 'node:path';
-import { execOutput, execQuiet, type ExecResult } from './exec.ts';
+import { execOutput, type ExecResult } from './exec.ts';
 
 // Process names that are likely to be a dev server. Compared after dropping a trailing
 // version number, so python3.12 and php8.2 match too.
@@ -9,8 +9,6 @@ const DEV_PROCESS_NAMES = new Set([
   'node', 'nodejs', 'python', 'ruby', 'php', 'php-fpm', 'deno', 'bun',
   'java', 'dotnet', 'hugo', 'caddy', 'nginx', 'httpd',
 ]);
-// VS Code and its forks, which stopping a server never climbs into (see serverJob).
-export const VS_CODE_PROCESS = /^(code|electron|cursor|vscodium|codium|windsurf)\b/i;
 // Docker's port forwarders. macOS cuts process names at 16 characters, hence the prefixes.
 const DOCKER_PROCESS = /^(com\.docker|docker-proxy|vpnkit)/i;
 // A listening address the phone can use: a wildcard, or a specific IPv4 address that isn't
@@ -20,7 +18,6 @@ const IPV4_HOST = /^\d+\.\d+\.\d+\.\d+$/;
 const UNREACHABLE_IPV4 = /^(127\.|169\.254\.)/;
 // Ports below this are system services, not dev servers.
 const MIN_DEV_PORT = 1024;
-const SHELL = /^-?(sh|bash|zsh|fish|dash|ksh|tcsh|csh|nu|pwsh)$/;
 
 export const LSOF_MISSING = process.platform === 'linux'
   ? 'lsof isn\'t installed, so running servers can\'t be detected. Install it, for example with `sudo apt install lsof`.'
@@ -207,66 +204,4 @@ export function pickRestartedServer(
 ): DetectedServer | undefined {
   const started = servers.filter(s => s.lanReachable && !pidsBefore.has(s.pid) && isInside(s.cwd, dir));
   return started.find(s => s.port === oldPort) ?? started[0];
-}
-
-export interface ProcessInfo {
-  pid: number;
-  ppid: number;
-  pgid: number;
-  // Executable name, without its directory.
-  name: string;
-}
-
-// Parses `ps -A -o pid=,ppid=,pgid=,comm=`. On macOS comm is the executable's full path.
-export function parsePs(stdout: string): Map<number, ProcessInfo> {
-  const processes = new Map<number, ProcessInfo>();
-  for (const line of stdout.split('\n')) {
-    const match = /^\s*(\d+)\s+(\d+)\s+(\d+)\s+(.*)$/.exec(line);
-    if (!match) continue;
-    const [, pid, ppid, pgid, comm] = match;
-    processes.set(Number(pid), { pid: Number(pid), ppid: Number(ppid), pgid: Number(pgid), name: path.basename(comm.trim()) });
-  }
-  return processes;
-}
-
-export async function listProcesses(): Promise<Map<number, ProcessInfo>> {
-  return parsePs((await execQuiet('ps', ['-A', '-o', 'pid=,ppid=,pgid=,comm='])) ?? '');
-}
-
-// Pid and its ancestors.
-export function ancestors(pid: number, processes: Map<number, ProcessInfo>): Set<number> {
-  const found = new Set<number>();
-  for (let p = processes.get(pid); p && !found.has(p.pid); p = processes.get(p.ppid)) found.add(p.pid);
-  return found;
-}
-
-// Listening pids that are neither in the server's job nor started by it (its workers).
-export function unrelatedListeners(listening: number[], jobPids: number[], processes: Map<number, ProcessInfo>): number[] {
-  const job = new Set(jobPids);
-  return listening.filter(pid => ![...ancestors(pid, processes)].some(p => job.has(p)));
-}
-
-/**
- * The processes to stop so the server on `pid` stays stopped, as Ctrl+C in its terminal would:
- * the server plus the ancestors in its process group that run its script (`scriptPids`, see
- * runningSameScript) and the package manager that ran it, up to but not including the shell it was
- * started from, which is returned too when there is one. Never climbs into VS Code, init,
- * `protectedPids`, or a tool running several scripts at once (concurrently, turbo…).
- */
-export function serverJob(
-  pid: number, processes: Map<number, ProcessInfo>, protectedPids: Set<number>, scriptPids: Set<number>,
-): { pids: number[]; shellPid?: number } {
-  const pids = [pid];
-  for (let current = processes.get(pid); current;) {
-    const parent = processes.get(current.ppid);
-    if (!parent || parent.pid <= 1 || protectedPids.has(parent.pid) || VS_CODE_PROCESS.test(parent.name)) break;
-    // A shell with job control runs each command in its own process group.
-    if (parent.pgid !== current.pgid) return { pids, shellPid: SHELL.test(parent.name) ? parent.pid : undefined };
-    // `current` is the package manager that ran the script, so `parent` started it as part of something
-    // bigger, which may be running other servers too. Stopping the script ends `current` anyway.
-    if (!scriptPids.has(current.pid)) break;
-    pids.push(parent.pid);
-    current = parent;
-  }
-  return { pids };
 }

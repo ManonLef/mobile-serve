@@ -5,7 +5,7 @@ import * as path from 'node:path';
 import {
   buildNetworkCommand, parseScriptEnv, runningProgram, runningSameScript, splitCommandLine, splitPsEnvironment,
 } from '../src/restartCommand.ts';
-import { listProcesses } from '../src/servers.ts';
+import { listProcesses } from '../src/processes.ts';
 
 const build = (script: string, body: unknown, program: string | undefined, packageManager = 'npm') =>
   buildNetworkCommand({ script, body, program, packageManager });

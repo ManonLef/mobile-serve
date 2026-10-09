@@ -1,9 +1,7 @@
 // Stops a dev server, as Ctrl+C in its terminal would, and starts it again with another command.
 import * as vscode from 'vscode';
-import {
-  findDevServers, listeningPids, listProcesses, ancestors, serverJob, unrelatedListeners, getWorkingDirs, pickRestartedServer,
-  type DetectedServer,
-} from './servers.ts';
+import { listProcesses, ancestors, serverJob, unrelatedListeners } from './processes.ts';
+import { findDevServers, listeningPids, getWorkingDirs, pickRestartedServer, type DetectedServer } from './servers.ts';
 import { runningSameScript } from './restartCommand.ts';
 import { waitFor } from './wait.ts';
 
