@@ -31,6 +31,8 @@ let state: vscode.Memento | undefined;
 let checkTimer: ReturnType<typeof setInterval> | undefined;
 // Stops each static server. They run inside the extension host, so they end with this window.
 const staticServers = new Map<number, () => Promise<void>>();
+// Told when Close Mobile stops a task, so a start still waiting for it doesn't report a failure.
+const taskClosers = new Map<number, () => void>();
 const changed = new vscode.EventEmitter<void>();
 export const onDidChangeShares = changed.event;
 
@@ -58,6 +60,11 @@ export function addShare(share: Share): void {
 export function addStaticShare(port: number, dir: string, stop: () => Promise<void>): void {
   staticServers.set(port, stop);
   addShare({ kind: 'static', port, dir });
+}
+
+export function addTaskShare(port: number, dir: string, onClose: () => void): void {
+  taskClosers.set(port, onClose);
+  addShare({ kind: 'task', port, dir });
 }
 
 // Whether a task is the one Mobile Serve started for `port`.
@@ -139,6 +146,8 @@ async function closeLiveServer(share: Extract<Share, { kind: 'liveServer' }>): P
 
 function closeTask(share: Extract<Share, { kind: 'task' }>): void {
   const execution = findTask(share.port);
+  taskClosers.get(share.port)?.();
+  taskClosers.delete(share.port);
   if (execution) {
     execution.terminate();
   } else {
@@ -286,9 +295,9 @@ export function registerSharing(context: vscode.ExtensionContext): void {
     vscode.workspace.onDidChangeConfiguration(onConfigurationChanged),
     // The task ended: stopped from here, with Ctrl+C or by closing its terminal, or the server failed.
     vscode.tasks.onDidEndTask(({ execution }) => {
-      if (shares.some(s => s.kind === 'task' && isOurTask(execution.task.definition, s.port))) {
-        setShares(shares.filter(s => !(s.kind === 'task' && isOurTask(execution.task.definition, s.port))));
-      }
+      const ended = shares.filter(s => s.kind === 'task' && isOurTask(execution.task.definition, s.port));
+      for (const share of ended) taskClosers.delete(share.port);
+      if (ended.length) setShares(shares.filter(s => !ended.includes(s)));
     }),
     {
       dispose: () => {

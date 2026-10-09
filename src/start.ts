@@ -6,8 +6,8 @@ import { canConnect } from './network.ts';
 import { planStart, portFor, scriptArgs, type StartPlan } from './projectStart.ts';
 import { realPath } from './servers.ts';
 import { startStaticServer } from './staticServer.ts';
-import { sleep } from './wait.ts';
-import { TASK_TYPE, addShare, addStaticShare, currentShares, isLocalUri, isOurTask } from './sharing.ts';
+import { waitForStart } from './wait.ts';
+import { TASK_TYPE, addStaticShare, addTaskShare, currentShares, isLocalUri, isOurTask } from './sharing.ts';
 
 const POLL_INTERVAL_MS = 500;
 // Some dev servers (Angular's, say) take a while to compile before they listen.
@@ -64,29 +64,29 @@ async function startScript(
   task.presentationOptions = { reveal: vscode.TaskRevealKind.Always, focus: false, panel: vscode.TaskPanelKind.Dedicated };
 
   let ended = false;
+  // Stopped with Close Mobile, which isn't a failure to report.
+  let closed = false;
   const onEnd = vscode.tasks.onDidEndTask(({ execution }) => {
     if (isOurTask(execution.task.definition, port)) ended = true;
   });
   try {
     const execution = await vscode.tasks.executeTask(task);
     // Recorded straight away, so Close Mobile can stop it while it starts.
-    addShare({ kind: 'task', port, dir: plan.dir });
+    addTaskShare(port, plan.dir, () => closed = true);
 
     return await vscode.window.withProgress({
       location: vscode.ProgressLocation.Notification,
       title: `Starting “${plan.packageManager} run ${plan.script}” for your phone…`,
       cancellable: true,
     }, async (_progress, token) => {
-      const end = Date.now() + START_TIMEOUT_MS;
-      while (!ended && !token.isCancellationRequested && Date.now() < end) {
-        if (await canConnect(host, port)) return port;
-        await sleep(POLL_INTERVAL_MS);
-      }
-      if (token.isCancellationRequested) {
+      const outcome = await waitForStart(() => canConnect(host, port),
+        () => ({ closed, cancelled: token.isCancellationRequested, ended }), START_TIMEOUT_MS, POLL_INTERVAL_MS);
+      if (outcome === 'listening') return port;
+      if (outcome === 'cancelled') {
         execution.terminate();
-      } else if (ended) {
+      } else if (outcome === 'ended') {
         vscode.window.showErrorMessage(`The dev server stopped before your phone could reach it. Check the “${task.name}” terminal.`);
-      } else {
+      } else if (outcome === 'timedOut') {
         vscode.window.showErrorMessage(`The dev server isn't reachable after ${START_TIMEOUT_MS / 1000} seconds. ` +
           `It keeps starting in the “${task.name}” terminal: show the phone URL again once it's up.`);
       }
