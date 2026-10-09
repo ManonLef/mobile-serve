@@ -2,7 +2,7 @@
   "name": "mobile-serve",
   "displayName": "Mobile Serve",
   "description": "Open your project on your real phone, like Go Live: start it or pick a running server, scan a QR code, done.",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "publisher": "local",
   "license": "MIT",
   "repository": { "type": "git", "url": "https://github.com/ManonLef/mobile-serve.git" },
