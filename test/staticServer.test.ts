@@ -53,6 +53,7 @@ async function site(): Promise<{ root: string; cleanup: () => Promise<void> }> {
   await fs.mkdir(path.join(root, 'blog'), { recursive: true });
   await fs.writeFile(path.join(root, 'index.html'), '<html><body><h1>Home</h1></body></html>');
   await fs.writeFile(path.join(root, 'style.css'), 'h1 { color: red }');
+  await fs.writeFile(path.join(root, 'subtitles.vtt'), 'WEBVTT');
   await fs.writeFile(path.join(root, 'blog', 'index.html'), '<h1>Blog</h1>');
   await fs.writeFile(path.join(root, '.env'), 'SECRET=1');
   await fs.mkdir(path.join(root, '.git'));
@@ -85,6 +86,8 @@ test('serves the folder, adding live reload to HTML pages', async () => {
     const css = await get(server, '/style.css');
     assert.strictEqual(css.body, 'h1 { color: red }');
     assert.match(css.headers['content-type']!, /^text\/css/);
+    // A <track> only shows subtitles served as text/vtt.
+    assert.match((await get(server, '/subtitles.vtt')).headers['content-type']!, /^text\/vtt/);
 
     // Relative links in blog/index.html only work with the trailing slash.
     const blog = await get(server, '/blog?x=1');
