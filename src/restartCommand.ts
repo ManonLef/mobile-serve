@@ -47,16 +47,53 @@ const LOCKFILES = [
   ['package-lock.json', 'npm'],
 ];
 
-// The program a command line runs, such as "vite" for "node /app/node_modules/vite/bin/vite.js --port 3000".
-export function runningProgram(commandLine: string): string | undefined {
-  const words = commandLine.trim().split(/\s+/);
-  const name = (word: string) => path.basename(word).replace(/\.[cm]?js$/, '');
+// The program arguments run, such as "vite" for ["node", "/app/node_modules/vite/bin/vite.js", "--port", "3000"].
+// Only the first word of a name counts, so a process title like "next-server (v14.2.0)" gives "next-server".
+export function runningProgram(args: string[]): string | undefined {
+  const name = (arg: string) => path.basename(arg).split(' ')[0].replace(/\.[cm]?js$/, '');
   let i = 0;
-  if (RUNTIMES.has(name(words[0]))) {
+  if (args[0] && RUNTIMES.has(name(args[0]))) {
     i = 1;
-    while (words[i]?.startsWith('-')) i++;
+    while (args[i]?.startsWith('-')) i++;
   }
-  return words[i] ? name(words[i]) : undefined;
+  return args[i] ? name(args[i]) || undefined : undefined;
+}
+
+// Splits a command line from ps into arguments. ps joins them with spaces, so a word that isn't an
+// existing path is joined with the words after it when that makes one ("/Users/me/My Projects/…").
+export async function splitCommandLine(commandLine: string, exists: (file: string) => Promise<boolean>): Promise<string[]> {
+  // Split on single spaces, so joining the words back restores runs of spaces too.
+  const words = commandLine.trim().split(' ');
+  const args: string[] = [];
+  for (let i = 0; i < words.length; i++) {
+    let arg = words[i];
+    if (!arg) continue;
+    if (arg.includes('/') && !await exists(arg)) {
+      for (let j = i + 1; j < words.length; j++) {
+        const joined = words.slice(i, j + 1).join(' ');
+        if (await exists(joined)) {
+          arg = joined;
+          i = j;
+          break;
+        }
+      }
+    }
+    args.push(arg);
+  }
+  return args;
+}
+
+// The arguments of a process owned by this user. Relative paths are looked up from `cwd`.
+async function readArguments(pid: number, cwd: string): Promise<string[]> {
+  if (process.platform === 'linux') {
+    try {
+      return (await fs.readFile(`/proc/${pid}/cmdline`, 'utf8')).split('\0').filter(Boolean);
+    } catch {
+      return [];
+    }
+  }
+  const commandLine = (await execQuiet('ps', ['-o', 'command=', '-p', String(pid)])) ?? '';
+  return splitCommandLine(commandLine, file => fs.access(path.resolve(cwd, file)).then(() => true, () => false));
 }
 
 // What npm, pnpm, yarn and bun put in the environment of everything a package.json script starts.
@@ -87,6 +124,12 @@ export function parseScriptEnv(entries: string[]): ScriptEnv | undefined {
   };
 }
 
+// Splits `ps -E` output (the command line, then the environment) into NAME=value entries.
+// An entry runs until the next NAME=, so values with spaces (a project path, say) stay whole.
+export function splitPsEnvironment(output: string): string[] {
+  return output.trim().split(/\s+(?=[A-Za-z_]\w*=)/).slice(1);
+}
+
 // The environment of a process owned by this user, as NAME=value entries.
 async function readEnvironment(pid: number): Promise<string[]> {
   if (process.platform === 'linux') {
@@ -96,20 +139,19 @@ async function readEnvironment(pid: number): Promise<string[]> {
       return [];
     }
   }
-  // macOS: -E appends the environment to the command line. Values can't be told apart from
-  // arguments that contain spaces, but the variables read here never contain any.
-  return ((await execQuiet('ps', ['-E', '-ww', '-o', 'command=', '-p', String(pid)])) ?? '').split(/\s+/);
+  // macOS: -E appends the environment to the command line.
+  return splitPsEnvironment((await execQuiet('ps', ['-E', '-ww', '-o', 'command=', '-p', String(pid)])) ?? '');
 }
 
-export function buildNetworkCommand({ script, body, processCommand, packageManager }: {
+export function buildNetworkCommand({ script, body, program, packageManager }: {
   script: string;
   body: unknown;
-  processCommand: string;
+  // The running server's program (see runningProgram).
+  program: string | undefined;
   packageManager: string;
 }): string | undefined {
   // Only restart when the script runs the same tool as the server that's running. Otherwise a
   // Laravel or Express server would get replaced by the project's Vite asset server.
-  const program = runningProgram(processCommand);
   const runningTool = program && HOST_FLAGS.find(h => h.inProcess.test(program));
   if (!runningTool || !SAFE_SCRIPT_NAME.test(script) || typeof body !== 'string') return;
   if (!runningTool.inScript.test(body) || COMPOUND_SCRIPT.test(body) || SETS_HOST.test(body)) return;
@@ -169,7 +211,7 @@ export async function findNetworkCommand(server: DetectedServer): Promise<{ comm
   const command = buildNetworkCommand({
     script: env.event,
     body: (scripts as Record<string, unknown>)[env.event],
-    processCommand: ((await execQuiet('ps', ['-o', 'command=', '-p', String(server.pid)])) ?? '').trim(),
+    program: runningProgram(await readArguments(server.pid, server.cwd)),
     packageManager: env.packageManager ?? await detectPackageManager(dir),
   });
   return command ? { command, dir } : undefined;
