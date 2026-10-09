@@ -4,14 +4,19 @@ import { findDevServers, realPath, LSOF_MISSING, type DevServer } from './server
 import { getLanAddresses, probe } from './network.ts';
 import { makeReachable } from './makeReachable.ts';
 import { showPanel, disposePanel } from './panel.ts';
+import { registerSharing, onDidChangeShares, currentShares, closeAll, undoOnShutdown } from './sharing.ts';
 import type { PageUrl } from './page.ts';
 
 const COMMAND = 'mobileServe.show';
+const STOP_COMMAND = 'mobileServe.stop';
 const DEFAULT_LIVE_SERVER_PORT = 5500;
 // Server detection relies on lsof, which Windows doesn't have.
 const CAN_DETECT_SERVERS = process.platform !== 'win32';
 
 type ServerItem = vscode.QuickPickItem & { server?: DevServer; manual?: boolean };
+
+// The port the panel offers to stop sharing, if it does.
+let panelSharedPort: number | undefined;
 
 // Running servers, or a message saying why they couldn't be looked for.
 async function findWorkspaceServers(): Promise<{ servers: DevServer[]; problem?: string }> {
@@ -92,7 +97,7 @@ async function pickServer(): Promise<DevServer | undefined> {
     },
   });
   // Nothing is known about a port typed in by hand, so lanReachable stays undefined.
-  return value ? { port: Number(value), label: 'Manual', liveServer: false } : undefined;
+  return value ? { port: Number(value), label: 'Manual', kind: 'manual' } : undefined;
 }
 
 async function show(): Promise<void> {
@@ -111,25 +116,77 @@ async function show(): Promise<void> {
   const scheme = https ? 'https' : 'http';
   const [first, ...rest] = addresses.map((a): PageUrl => ({ name: a.name, url: `${scheme}://${a.address}:${port}` }));
   const qr = await toDataURL(first.url, { margin: 1, width: 320 });
-  showPanel({ urls: [first, ...rest], qr, listening, remoteName: vscode.env.remoteName });
+  const ours = currentShares().some(s => s.port === port);
+  showPanel({
+    urls: [first, ...rest], qr, listening, remoteName: vscode.env.remoteName,
+    sharedBy: listening ? (ours ? 'mobileServe' : 'other') : undefined,
+  });
+  panelSharedPort = ours ? port : undefined;
 }
 
-export function activate(context: vscode.ExtensionContext): void {
-  const item = vscode.window.createStatusBarItem('mobileServe.status', vscode.StatusBarAlignment.Right, 100);
-  item.name = 'Mobile Serve';
-  item.text = '$(device-mobile) Mobile';
-  item.tooltip = 'Show a QR code to open a local dev server on your phone';
-  item.command = COMMAND;
-  item.show();
+// "Mobile" opens a server up for the phone; while Mobile Serve has opened one up, it becomes "Close Mobile".
+function updateStatusBar(item: vscode.StatusBarItem): void {
+  const ports = [...new Set(currentShares().map(s => s.port))];
+  // Hides "Stop Sharing" from the Command Palette when there's nothing to stop.
+  void vscode.commands.executeCommand('setContext', 'mobileServe.sharing', ports.length > 0);
+  if (!ports.length) {
+    item.text = '$(device-mobile) Mobile';
+    item.tooltip = 'Show a QR code to open a local dev server on your phone';
+    item.command = COMMAND;
+    item.backgroundColor = undefined;
+    return;
+  }
+  const list = ports.join(', ');
+  item.text = `$(device-mobile) Close Mobile: ${list}`;
+  item.tooltip = `Port ${list} is reachable from every device on your network. Click to stop sharing it.\n\n` +
+    'To show the QR code again, run “Mobile Serve: Show Phone URL”.';
+  item.command = STOP_COMMAND;
+  item.backgroundColor = new vscode.ThemeColor('statusBarItem.warningBackground');
+}
 
-  const command = vscode.commands.registerCommand(COMMAND, async () => {
+// Runs a command, showing any error it ends with.
+function reportingErrors(run: () => Promise<void>): () => Promise<void> {
+  return async () => {
     try {
-      await show();
+      await run();
     } catch (err) {
       vscode.window.showErrorMessage(`Mobile Serve: ${err instanceof Error ? err.message : String(err)}`);
     }
-  });
-  context.subscriptions.push(item, command, { dispose: disposePanel });
+  };
 }
 
-export function deactivate(): void {}
+export function activate(context: vscode.ExtensionContext): void {
+  registerSharing(context);
+  const item = vscode.window.createStatusBarItem('mobileServe.status', vscode.StatusBarAlignment.Right, 100);
+  item.name = 'Mobile Serve';
+  updateStatusBar(item);
+  item.show();
+
+  context.subscriptions.push(
+    item,
+    onDidChangeShares(() => {
+      updateStatusBar(item);
+      // Sharing ended (closed, or the server stopped), so the panel's URLs and Stop Sharing button are out of date.
+      if (panelSharedPort !== undefined && !currentShares().some(s => s.port === panelSharedPort)) {
+        panelSharedPort = undefined;
+        disposePanel();
+      }
+    }),
+    vscode.commands.registerCommand(COMMAND, reportingErrors(show)),
+    vscode.commands.registerCommand(STOP_COMMAND, reportingErrors(async () => {
+      if (!currentShares().length) {
+        vscode.window.showInformationMessage('Mobile Serve isn\'t sharing anything on your network.');
+        return;
+      }
+      // The URLs stop working, so the panel goes too.
+      panelSharedPort = undefined;
+      disposePanel();
+      await closeAll();
+    })),
+    { dispose: disposePanel },
+  );
+}
+
+export function deactivate(): void {
+  undoOnShutdown();
+}

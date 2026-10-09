@@ -19,3 +19,12 @@ test('mentions self-signed certificates only for HTTPS', () => {
   assert.ok(page('https://192.168.1.5:5173').includes('self-signed'));
   assert.ok(!page('http://192.168.1.5:5173').includes('self-signed'));
 });
+
+test('offers Stop Sharing only for what Mobile Serve shared', () => {
+  const page = (sharedBy?: 'mobileServe' | 'other') =>
+    renderPage({ urls: [{ name: 'en0', url: 'http://192.168.1.5:5173' }], qr: 'data:,', listening: true, sharedBy }, 'n');
+  assert.ok(page('mobileServe').includes('id="stop"'));
+  assert.ok(!page('other').includes('id="stop"'));
+  assert.ok(page('other').includes('stop the server yourself'));
+  assert.ok(!page().includes('Every device on this network'));
+});

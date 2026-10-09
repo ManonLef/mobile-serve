@@ -18,17 +18,27 @@
   },
   "contributes": {
     "commands": [
-      { "command": "mobileServe.show", "title": "Mobile Serve: Show Phone URL" }
-    ]
+      { "command": "mobileServe.show", "title": "Mobile Serve: Show Phone URL" },
+      { "command": "mobileServe.stop", "title": "Mobile Serve: Stop Sharing on the Network" }
+    ],
+    "menus": {
+      "commandPalette": [
+        { "command": "mobileServe.stop", "when": "mobileServe.sharing" }
+      ]
+    }
   },
   "scripts": {
-    "build": "esbuild src/extension.ts --bundle --platform=node --format=cjs --target=node18 --external:vscode --outfile=dist/extension.js",
-    "watch": "npm run build -- --sourcemap --watch",
+    "bundle": "esbuild src/extension.ts --bundle --platform=node --format=cjs --target=node18 --external:vscode --main-fields=module,main --metafile=dist/meta.json --outfile=dist/extension.js",
+    "notices": "node scripts/notices.ts",
+    "check-bundle": "node scripts/checkBundle.ts",
+    "build": "npm run bundle && npm run notices && npm run check-bundle",
+    "build:debug": "npm run bundle -- --sourcemap && npm run notices && npm run check-bundle",
+    "watch": "npm run bundle -- --sourcemap --watch",
     "check": "tsc",
     "test": "node --test \"test/*.test.ts\"",
-    "vscode:prepublish": "npm run check && npm test && npm run build -- --minify"
+    "vscode:prepublish": "npm run check && npm test && npm run bundle -- --minify && npm run notices && npm run check-bundle"
   },
-  "dependencies": { "qrcode": "1.5.4" },
+  "dependencies": { "jsonc-parser": "3.3.1", "qrcode": "1.5.4" },
   "devDependencies": {
     "@types/node": "^18.19.0",
     "@types/qrcode": "^1.5.5",

@@ -4,7 +4,8 @@ import * as tls from 'node:tls';
 import { execQuiet } from './exec.ts';
 
 // Loopback, VPN, virtual machine, container, Hyper-V/WSL and Apple peer-to-peer interfaces.
-const SKIP_INTERFACE = /^(lo|utun|tun|tap|wg|tailscale|zt|bridge|br-|virbr|docker|veth|cni|flannel|podman|vmnet|vboxnet|vEthernet|VirtualBox|VMware|llw|awdl|anpi|ap\d)/i;
+// Loopback is matched whole: on Windows, Ethernet adapters can be called "Local Area Connection".
+const SKIP_INTERFACE = /^(lo\d*$|utun|tun|tap|wg|tailscale|zt|bridge|br-|virbr|docker|veth|cni|flannel|podman|vmnet|vboxnet|vEthernet|VirtualBox|VMware|llw|awdl|anpi|ap\d)/i;
 const PRIVATE_IP = /^(10\.|192\.168\.|172\.(1[6-9]|2\d|3[01])\.)/;
 // Self-assigned when there's no DHCP server; a phone can't use it.
 const LINK_LOCAL_IP = /^169\.254\./;
@@ -34,13 +35,17 @@ export function rankAddresses(
   return addresses.sort((a, b) => rank(a) - rank(b) || a.name.localeCompare(b.name));
 }
 
-// The interface the default route goes through, when it can be found.
+// The interface the default route goes through, when it can be found. Only used for ranking, so failures don't matter.
 async function defaultRouteInterface(): Promise<string | undefined> {
-  if (process.platform === 'darwin') {
-    return /interface:\s*(\S+)/.exec((await execQuiet('route', ['-n', 'get', 'default'])) ?? '')?.[1];
-  }
-  if (process.platform === 'linux') {
-    return /\bdev\s+(\S+)/.exec((await execQuiet('ip', ['route', 'show', 'default'])) ?? '')?.[1];
+  try {
+    if (process.platform === 'darwin') {
+      return /interface:\s*(\S+)/.exec((await execQuiet('route', ['-n', 'get', 'default'])) ?? '')?.[1];
+    }
+    if (process.platform === 'linux') {
+      return /\bdev\s+(\S+)/.exec((await execQuiet('ip', ['route', 'show', 'default'])) ?? '')?.[1];
+    }
+  } catch {
+    // Fall back to ranking by address alone.
   }
   return undefined;
 }

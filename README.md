@@ -14,6 +14,8 @@ real touch, real screen size, real Safari or Chrome.
 2. Click **📱 Mobile** in the status bar, or run **Mobile Serve: Show Phone URL** from the Command Palette.
 3. Pick the server from the list. Servers started from the open project are listed first.
 4. Scan the QR code with your phone. Your phone has to be on the same Wi-Fi network as your computer.
+5. When you're done, click **📱 Close Mobile** in the status bar. It shows up when Mobile Serve has
+   made a server reachable from your network (see below), and puts it back to this computer only.
 
 The panel also shows whether the server is listening on that address (checked from your computer,
 so a firewall can still block the phone), and lists other addresses to try
@@ -27,10 +29,11 @@ reach them. Mobile Serve tells you when that's the case and helps you fix it:
 - **Vite, Astro, Nuxt, Next.js, Angular CLI, webpack-dev-server and Vue CLI:** it reads your
   `package.json`, shows the command that restarts the server on your network
   (for example `npm run dev -- --host`), and can restart it for you, in the terminal it was running in.
-  It only offers this when the running server and the script use the same tool, and the script runs
-  just that tool.
+  It only offers this when the server was started with a `package.json` script (`npm run dev`,
+  `pnpm dev`, …), that script runs just that one tool, and the tool is the one that's running.
 - **Live Server:** it can switch Live Server's host setting to `0.0.0.0` for this workspace. It never
-  changes the setting for all of VS Code, so open the folder you're serving first.
+  changes the setting for all of VS Code, so open the folder you're serving first. The setting is saved
+  in the workspace settings (usually `.vscode/settings.json`), so take care not to commit it.
 - **Docker:** published container ports are listed too. A port published on `127.0.0.1` only has to
   be published on all interfaces instead (`-p 3000:3000`).
 - **Anything else:** it shows example commands, and you can still show the QR code anyway.
@@ -70,10 +73,25 @@ an API or backend sometimes need a small change:
 ## Security
 
 Making a server reachable from your phone makes it reachable from every device on that network.
-Avoid doing this on public or untrusted Wi-Fi, and stop the server when you're done.
+Avoid doing this on public or untrusted Wi-Fi, and stop sharing when you're done: dev servers aren't
+built to face a network, and Live Server serves every file in the folder, `.env` and `.git` included.
+
+**Close Mobile** undoes what Mobile Serve changed: it restarts a server it restarted with the original
+script, and puts Live Server's host setting back (stopping Live Server if it's running). A server
+that was already reachable before Mobile Serve touched it is left alone; stop it yourself.
+
+Closing VS Code puts Live Server's setting back too, since Live Server stops with it. If VS Code was
+force quit or crashed, that happens the next time you open the workspace.
 
 In Restricted Mode (untrusted workspaces) the extension won't restart servers for you, because
 that runs scripts from the project's `package.json`.
+
+## Licenses
+
+Mobile Serve is MIT-licensed. The packages bundled into the extension are listed with their licenses
+in `dist/THIRD_PARTY_NOTICES.txt`, which the build generates.
+
+"QR Code" is a registered trademark of DENSO WAVE INCORPORATED.
 
 ## Development
 
@@ -85,4 +103,6 @@ Needs Node.js 22.18 or newer. Run `npm install`, then:
 - `npx @vscode/vsce package` builds the `.vsix`.
 
 The source in `src/` is TypeScript using ES modules. esbuild bundles it into a single CommonJS
-file, `dist/extension.js`, because that's the format VS Code loads extensions in.
+file, `dist/extension.js`, because that's the format VS Code loads extensions in. The small `package.json`
+files in `src/`, `test/` and `scripts/` only set `"type": "module"`, so Node runs those folders as ES
+modules while the root package, and with it `dist/extension.js`, stays CommonJS.
