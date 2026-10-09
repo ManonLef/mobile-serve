@@ -144,3 +144,15 @@ test('lsofOutput tells a failure from nothing found', () => {
   assert.strictEqual(lsofOutput({ stdout: '', stderr: warning, code: 1 }), '');
   assert.throws(() => lsofOutput({ stdout: '', stderr: 'lsof: no pwd entry for UID 501\n', code: 1 }), /lsof failed: lsof: no pwd entry/);
 });
+
+test('collectServers records the one address a server is bound to', () => {
+  const servers = collectServers([
+    { pid: 1, command: 'node', names: ['10.0.0.5:5173'] },
+    // Also on all interfaces, so any address works.
+    { pid: 2, command: 'node', names: ['10.0.0.5:3000', '*:3000'] },
+  ]);
+  assert.deepStrictEqual(servers, [
+    { port: 5173, pid: 1, label: 'node', kind: 'process', lanReachable: true, boundAddress: '10.0.0.5' },
+    { port: 3000, pid: 2, label: 'node', kind: 'process', lanReachable: true },
+  ]);
+});

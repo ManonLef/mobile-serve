@@ -137,9 +137,12 @@ async function show(): Promise<void> {
     : target.server.port;
   if (!port) return;
 
-  const { listening, https } = await probe(addresses[0].address, port);
+  // A server listening on one address can only be reached on that one.
+  const bound = 'server' in target ? target.server.boundAddress : undefined;
+  const usable = bound ? [addresses.find(a => a.address === bound) ?? { name: 'the server\'s address', address: bound }] : addresses;
+  const { listening, https } = await probe(usable[0].address, port);
   const scheme = https ? 'https' : 'http';
-  const [first, ...rest] = addresses.map((a): PageUrl => ({ name: a.name, url: `${scheme}://${a.address}:${port}` }));
+  const [first, ...rest] = usable.map((a): PageUrl => ({ name: a.name, url: `${scheme}://${a.address}:${port}` }));
   const qr = await toDataURL(first.url, { margin: 1, width: 320 });
   const ours = currentShares().some(s => s.port === port);
   showPanel({

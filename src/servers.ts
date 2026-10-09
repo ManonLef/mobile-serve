@@ -37,6 +37,8 @@ export interface DevServer {
   kind: 'process' | 'liveServer' | 'docker' | 'manual';
   // Listens on an address the phone can use. Unknown for a port typed in by hand.
   lanReachable?: boolean;
+  // The one IPv4 address it listens on, when it doesn't listen on all of them.
+  boundAddress?: string;
   // Working directory of the server process.
   cwd?: string;
   // Started from one of the open workspace folders.
@@ -145,9 +147,11 @@ export function collectServers(processes: LsofProcess[], liveServerPort?: number
     }
   }
   return [...byPort].map(([port, listeners]) => {
-    const reachable = listeners.find(l => isLanHost(l.host));
+    const reachable = listeners.find(l => WILDCARD_HOST.test(l.host)) ?? listeners.find(l => isLanHost(l.host));
     const { pid, label, kind } = reachable ?? listeners[0];
-    return { port, pid, label, kind, lanReachable: !!reachable };
+    const server: DetectedServer = { port, pid, label, kind, lanReachable: !!reachable };
+    if (reachable && !WILDCARD_HOST.test(reachable.host)) server.boundAddress = reachable.host;
+    return server;
   });
 }
 
