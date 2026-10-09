@@ -1,6 +1,7 @@
 // What Mobile Serve has made reachable from the network, so "Close Mobile" can undo it.
 import * as path from 'node:path';
 import * as vscode from 'vscode';
+import { canConnect } from './network.ts';
 import { listeningPids } from './servers.ts';
 import { restartLocally } from './restart.ts';
 import { restoreSettingInFile } from './settingsFile.ts';
@@ -11,17 +12,25 @@ const LIVE_SERVER_SETTINGS = 'liveServer.settings';
 const LIVE_SERVER_GO_OFFLINE = 'extension.liveServer.goOffline';
 // How often to check that restarted servers are still running, so the status bar doesn't offer to close what's gone.
 const CHECK_INTERVAL_MS = 10000;
+// The type of the tasks that run a project's dev script for the phone (see package.json).
+export const TASK_TYPE = 'mobileServe';
 
 export type Share =
   // A dev server Mobile Serve restarted with its host flag. Closing restarts it with `localCommand`.
   | { kind: 'restarted'; port: number; pid: number; dir: string; localCommand: string }
   // Live Server's host setting, which Mobile Serve changed to 0.0.0.0 from `previousHost`
   // (the workspace value, undefined when it wasn't set). Closing puts it back.
-  | { kind: 'liveServer'; port: number; previousHost: unknown };
+  | { kind: 'liveServer'; port: number; previousHost: unknown }
+  // A project's own server, which Mobile Serve started for the phone: its dev script as a VS Code
+  // task, or the static server. Closing stops it.
+  | { kind: 'task'; port: number; dir: string }
+  | { kind: 'static'; port: number; dir: string };
 
 let shares: Share[] = [];
 let state: vscode.Memento | undefined;
 let checkTimer: ReturnType<typeof setInterval> | undefined;
+// Stops each static server. They run inside the extension host, so they end with this window.
+const staticServers = new Map<number, () => Promise<void>>();
 const changed = new vscode.EventEmitter<void>();
 export const onDidChangeShares = changed.event;
 
@@ -46,6 +55,26 @@ export function addShare(share: Share): void {
   setShares([...shares.filter(s => s.port !== share.port), share]);
 }
 
+export function addStaticShare(port: number, dir: string, stop: () => Promise<void>): void {
+  staticServers.set(port, stop);
+  addShare({ kind: 'static', port, dir });
+}
+
+// Whether a task is the one Mobile Serve started for `port`.
+export function isOurTask(definition: vscode.TaskDefinition, port: number): boolean {
+  return definition.type === TASK_TYPE && definition.port === port;
+}
+
+function findTask(port: number): vscode.TaskExecution | undefined {
+  return vscode.tasks.taskExecutions.find(execution => isOurTask(execution.task.definition, port));
+}
+
+// Whether the extension can read the files at `uri`. Over Remote SSH, WSL or in a container it runs
+// on that machine, where the files are.
+export function isLocalUri(uri: vscode.Uri): boolean {
+  return uri.scheme === 'file' || (uri.scheme === 'vscode-remote' && !!vscode.env.remoteName);
+}
+
 function liveServerHost(): unknown {
   return vscode.workspace.getConfiguration(LIVE_SERVER_SETTINGS).inspect('host')?.workspaceValue;
 }
@@ -60,12 +89,10 @@ function setLiveServerHost(host: unknown): Thenable<void> {
  */
 function liveServerHostLocation(): { file: string; jsonPath: string[] } | undefined {
   const key = `${LIVE_SERVER_SETTINGS}.host`;
-  // Over Remote SSH, WSL or in a container the extension runs on that machine, where the files are.
-  const isLocal = (uri: vscode.Uri) => uri.scheme === 'file' || (uri.scheme === 'vscode-remote' && !!vscode.env.remoteName);
   const workspaceFile = vscode.workspace.workspaceFile;
-  if (workspaceFile) return isLocal(workspaceFile) ? { file: workspaceFile.fsPath, jsonPath: ['settings', key] } : undefined;
+  if (workspaceFile) return isLocalUri(workspaceFile) ? { file: workspaceFile.fsPath, jsonPath: ['settings', key] } : undefined;
   const folder = vscode.workspace.workspaceFolders?.[0];
-  return folder && isLocal(folder.uri) ? { file: path.join(folder.uri.fsPath, '.vscode', 'settings.json'), jsonPath: [key] } : undefined;
+  return folder && isLocalUri(folder.uri) ? { file: path.join(folder.uri.fsPath, '.vscode', 'settings.json'), jsonPath: [key] } : undefined;
 }
 
 // Forgets restarted servers that have stopped, or been restarted by hand.
@@ -110,9 +137,28 @@ async function closeLiveServer(share: Extract<Share, { kind: 'liveServer' }>): P
   }
 }
 
+function closeTask(share: Extract<Share, { kind: 'task' }>): void {
+  const execution = findTask(share.port);
+  if (execution) {
+    execution.terminate();
+  } else {
+    // Started before a window reload that VS Code didn't reconnect the task after.
+    vscode.window.showWarningMessage(`Mobile Serve can't stop the server on port ${share.port}. Stop it in its terminal with Ctrl+C.`);
+  }
+}
+
+async function closeStatic(share: Extract<Share, { kind: 'static' }>): Promise<void> {
+  const stop = staticServers.get(share.port);
+  staticServers.delete(share.port);
+  await stop?.();
+}
+
 // Whether the share is still in place, so a close that failed early keeps offering to close it.
 async function stillShared(share: Share): Promise<boolean> {
   if (share.kind === 'liveServer') return liveServerHost() === '0.0.0.0';
+  // Terminating ends the task, and one VS Code no longer knows of can't be stopped from here.
+  if (share.kind === 'task') return false;
+  if (share.kind === 'static') return staticServers.has(share.port);
   try {
     return (await listeningPids(share.port)).includes(share.pid);
   } catch {
@@ -125,7 +171,9 @@ export async function closeAll(): Promise<void> {
   for (const share of [...shares]) {
     try {
       if (share.kind === 'restarted') await closeRestarted(share);
-      else await closeLiveServer(share);
+      else if (share.kind === 'liveServer') await closeLiveServer(share);
+      else if (share.kind === 'task') closeTask(share);
+      else await closeStatic(share);
     } finally {
       if (!(await stillShared(share))) setShares(shares.filter(s => s !== share));
     }
@@ -135,6 +183,7 @@ export async function closeAll(): Promise<void> {
 function isShare(value: unknown): value is Share {
   const share = value as Share | undefined;
   return typeof share?.port === 'number' && (share.kind === 'liveServer' ||
+    ((share.kind === 'task' || share.kind === 'static') && typeof share.dir === 'string') ||
     (share.kind === 'restarted' && typeof share.pid === 'number' && typeof share.dir === 'string' && typeof share.localCommand === 'string'));
 }
 
@@ -149,6 +198,11 @@ async function restoreShares(saved: Share[]): Promise<void> {
       } catch {
         // Can't tell, so it's forgotten rather than offered for closing.
       }
+    } else if (share.kind === 'task') {
+      // VS Code reconnects tasks after a window reload, possibly after this runs, so the port is checked too.
+      if (findTask(share.port) || await canConnect('127.0.0.1', share.port)) kept.push(share);
+    } else if (share.kind === 'static') {
+      // Stopped with the last window's extension host.
     } else if (liveServerHost() === '0.0.0.0') {
       // Normally undone when VS Code closes (see undoOnShutdown), so VS Code was force quit or crashed.
       // Live Server stopped with it, so the setting can go back straight away.
@@ -185,7 +239,20 @@ export function registerSharing(context: vscode.ExtensionContext): void {
   state = context.workspaceState;
   const saved = state.get<unknown>(STATE_KEY);
   if (Array.isArray(saved)) void restoreShares(saved.filter(isShare));
-  context.subscriptions.push(changed, vscode.workspace.onDidChangeConfiguration(onConfigurationChanged), {
-    dispose: () => clearInterval(checkTimer),
-  });
+  context.subscriptions.push(
+    changed,
+    vscode.workspace.onDidChangeConfiguration(onConfigurationChanged),
+    // The task ended: stopped from here, with Ctrl+C or by closing its terminal, or the server failed.
+    vscode.tasks.onDidEndTask(({ execution }) => {
+      if (shares.some(s => s.kind === 'task' && isOurTask(execution.task.definition, s.port))) {
+        setShares(shares.filter(s => !(s.kind === 'task' && isOurTask(execution.task.definition, s.port))));
+      }
+    }),
+    {
+      dispose: () => {
+        clearInterval(checkTimer);
+        for (const stop of staticServers.values()) void stop();
+      },
+    },
+  );
 }
