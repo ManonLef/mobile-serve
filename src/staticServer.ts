@@ -118,7 +118,14 @@ export function startStaticServer(root: string, port: number): Promise<StaticSer
   let reloadTimer: ReturnType<typeof setTimeout> | undefined;
   let onlyCss = true;
 
-  const handle = async (req: http.IncomingMessage, res: http.ServerResponse): Promise<void> => {
+  // The file's real path, or undefined for a symlink pointing out of the folder, or to a hidden file
+  // in it. Resolving also turns a Windows short name (ENV~1) into the real one (.env).
+  const servable = async (file: string): Promise<string | undefined> => {
+    const real = await fs.promises.realpath(file);
+    return isInside(real, root) && !isHidden(path.relative(root, real)) ? real : undefined;
+  };
+
+  const handle =async (req: http.IncomingMessage, res: http.ServerResponse): Promise<void> => {
     if (!isAllowedHost(req.headers.host)) {
       log.info(`Refused a request for ${req.headers.host ?? 'no host'}: the static server only answers to IP addresses and localhost.`);
       return send(res, 403, 'Open this page by its IP address');
@@ -133,20 +140,21 @@ export function startStaticServer(root: string, port: number): Promise<StaticSer
       return;
     }
 
-    let file = resolveRequestPath(root, urlPath);
-    if (!file) return send(res, 404, 'Not found');
+    const requested = resolveRequestPath(root, urlPath);
+    if (!requested) return send(res, 404, 'Not found');
+    let file: string | undefined;
     let stat: fs.Stats;
     try {
-      // Nor is a symlink pointing out of the folder, or to a hidden file in it. Resolving also turns a
-      // Windows short name (ENV~1) into the real one (.env).
-      file = await fs.promises.realpath(file);
-      if (!isInside(file, root) || isHidden(path.relative(root, file))) return send(res, 404, 'Not found');
+      file = await servable(requested);
+      if (!file) return send(res, 404, 'Not found');
       stat = await fs.promises.stat(file);
       if (stat.isDirectory()) {
         // Relative links in the folder's index.html need the trailing slash.
         const { pathname, search } = new URL(urlPath, 'http://localhost');
         if (!pathname.endsWith('/')) return send(res, 301, 'Moved', { Location: pathname + '/' + search });
-        file = path.join(file, 'index.html');
+        // The index.html can be a symlink too.
+        file = await servable(path.join(file, 'index.html'));
+        if (!file) return send(res, 404, 'Not found');
         stat = await fs.promises.stat(file);
       }
     } catch {
