@@ -5,8 +5,8 @@ import {
   type DetectedServer,
 } from './servers.ts';
 import { runningSameScript } from './restartCommand.ts';
+import { sleep, waitFor } from './wait.ts';
 
-const POLL_INTERVAL_MS = 500;
 const STOP_TIMEOUT_MS = 5000;
 // How long the progress notification waits for the restarted server.
 const START_TIMEOUT_MS = 30000;
@@ -20,21 +20,8 @@ export interface Run {
   dir: string;
 }
 
-const sleep = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
-
 // Ports whose server is being stopped and started again, so it isn't done twice at once.
 const restarting = new Set<number>();
-
-// Calls `check` until it returns something truthy, or resolves to undefined after `timeoutMs` or on cancellation.
-async function waitFor<T>(check: () => Promise<T>, timeoutMs: number, token?: vscode.CancellationToken): Promise<T | undefined> {
-  const end = Date.now() + timeoutMs;
-  while (Date.now() < end && !token?.isCancellationRequested) {
-    const result = await check();
-    if (result) return result;
-    await sleep(POLL_INTERVAL_MS);
-  }
-  return undefined;
-}
 
 // The VS Code terminal whose shell started the server, if it's still in the server's directory.
 async function findServerTerminal(shellPid: number | undefined, dir: string): Promise<vscode.Terminal | undefined> {

@@ -6,6 +6,7 @@ import { canConnect } from './network.ts';
 import { planStart, portFor, scriptArgs, type StartPlan } from './projectStart.ts';
 import { realPath } from './servers.ts';
 import { startStaticServer } from './staticServer.ts';
+import { sleep } from './wait.ts';
 import { TASK_TYPE, addShare, addStaticShare, currentShares, isLocalUri, isOurTask } from './sharing.ts';
 
 const POLL_INTERVAL_MS = 500;
@@ -18,8 +19,6 @@ export interface StartOption {
   // Set when the folder is already started for the phone, on this port.
   sharedPort?: number;
 }
-
-const sleep = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
 
 // The workspace folders Mobile Serve can start, one option each.
 export async function findStartOptions(): Promise<StartOption[]> {
