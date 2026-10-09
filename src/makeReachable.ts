@@ -52,7 +52,8 @@ function restartOnNetwork(server: DetectedServer, restart: { command: string; di
       vscode.window.showErrorMessage(`The server on port ${server.port} has already stopped. Start it with “${restart.command}”.`);
       return;
     }
-    // Stop what started the server too (npm, a watcher…), as Ctrl+C would, so nothing starts it again.
+    // Stop what started the server too (npm, a watcher…), the processes Ctrl+C would stop, so nothing starts it again.
+    // Each gets SIGTERM rather than Ctrl+C's SIGINT, which commands a script starts in the background ignore.
     const processes = await listProcesses();
     const job = serverJob(server.pid, processes, ancestors(process.pid, processes));
     // Another process on the port (another project's server on [::1], say) would keep it busy, and isn't ours to stop.
