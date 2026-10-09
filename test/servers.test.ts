@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert';
 import {
-  parseLsof, parseListenAddress, isDevProcess, isInside, isLanHost, collectServers, pickRestartedServer, parsePs, serverJob, unrelatedListeners,
+  lsofOutput, parseLsof, parseListenAddress, isDevProcess, isInside, isLanHost, collectServers, pickRestartedServer, parsePs, serverJob, unrelatedListeners,
   type DetectedServer,
 } from '../src/servers.ts';
 
@@ -132,4 +132,15 @@ test('unrelatedListeners allows the server\'s job and its workers, nothing else'
   ].join('\n'));
   assert.deepStrictEqual(unrelatedListeners([302, 303], [302, 300], processes), []);
   assert.deepStrictEqual(unrelatedListeners([302, 500, 999], [302, 300], processes), [500, 999]);
+});
+
+test('lsofOutput tells a failure from nothing found', () => {
+  assert.strictEqual(lsofOutput({ stdout: '', stderr: '', code: 1 }), '');
+  assert.strictEqual(lsofOutput({ stdout: '4242\n', stderr: '', code: 0 }), '4242\n');
+  // Some pids gone, the rest reported.
+  assert.strictEqual(lsofOutput({ stdout: 'p1\nn/app\n', stderr: '', code: 1 }), 'p1\nn/app\n');
+  // Linux desktops print this on every run.
+  const warning = 'lsof: WARNING: can\'t stat() fuse.gvfsd-fuse file system /run/user/1000/gvfs\n      Output information may be incomplete.\n';
+  assert.strictEqual(lsofOutput({ stdout: '', stderr: warning, code: 1 }), '');
+  assert.throws(() => lsofOutput({ stdout: '', stderr: 'lsof: no pwd entry for UID 501\n', code: 1 }), /lsof failed: lsof: no pwd entry/);
 });

@@ -1,7 +1,7 @@
 // Finds dev servers listening on this machine, using lsof (macOS and Linux only).
 import * as fs from 'node:fs';
 import * as path from 'node:path';
-import { execQuiet } from './exec.ts';
+import { execOutput, execQuiet, type ExecResult } from './exec.ts';
 
 // Process names that are likely to be a dev server. Compared after dropping a trailing
 // version number, so python3.12 and php8.2 match too.
@@ -56,11 +56,23 @@ export interface LsofProcess {
   names: string[];
 }
 
+/**
+ * lsof's output, or an error. lsof exits 1 both when nothing matches and when it fails, so a failure
+ * is told apart by the explanation it writes to stderr. Warnings (on Linux, about file systems it
+ * can't look into) can come with every run and don't count.
+ */
+export function lsofOutput({ stdout, stderr, code }: ExecResult): string {
+  // Indented lines continue the message before them.
+  const problem = stderr.split('\n').find(line => /^\S/.test(line) && !/\bWARNING\b/.test(line));
+  if (code !== 0 && !stdout.trim() && problem) throw new Error(`lsof failed: ${problem.trim()}`);
+  return stdout;
+}
+
 // Runs lsof, throwing LSOF_MISSING if it isn't installed.
 async function lsof(args: string[]): Promise<string> {
-  const stdout = await execQuiet('lsof', args);
-  if (stdout === undefined) throw new Error(LSOF_MISSING);
-  return stdout;
+  const result = await execOutput('lsof', args);
+  if (!result) throw new Error(LSOF_MISSING);
+  return lsofOutput(result);
 }
 
 // Parses `lsof -F` output into one record per process.
