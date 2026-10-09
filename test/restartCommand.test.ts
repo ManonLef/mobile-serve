@@ -1,7 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert';
 import { spawn } from 'node:child_process';
-import * as path from 'node:path';
 import {
   buildNetworkCommand, parseScriptEnv, runningProgram, runningSameScript, splitCommandLine, splitPsEnvironment,
 } from '../src/restartCommand.ts';
