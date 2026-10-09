@@ -1,7 +1,6 @@
 // Finds dev servers listening on this machine, using lsof (macOS and Linux only).
-import * as fs from 'node:fs';
-import * as path from 'node:path';
-import { execOutput, execQuiet, type ExecResult } from './exec.ts';
+import { execOutput, type ExecResult } from './exec.ts';
+import { isInside } from './paths.ts';
 
 // Process names that are likely to be a dev server. Compared after dropping a trailing
 // version number, so python3.12 and php8.2 match too.
@@ -9,8 +8,6 @@ const DEV_PROCESS_NAMES = new Set([
   'node', 'nodejs', 'python', 'ruby', 'php', 'php-fpm', 'deno', 'bun',
   'java', 'dotnet', 'hugo', 'caddy', 'nginx', 'httpd',
 ]);
-// VS Code and its forks. Only Live Server's port is worth showing from these.
-export const VS_CODE_PROCESS = /^(code|electron|cursor|vscodium|codium|windsurf)\b/i;
 // Docker's port forwarders. macOS cuts process names at 16 characters, hence the prefixes.
 const DOCKER_PROCESS = /^(com\.docker|docker-proxy|vpnkit)/i;
 // A listening address the phone can use: a wildcard, or a specific IPv4 address that isn't
@@ -20,11 +17,10 @@ const IPV4_HOST = /^\d+\.\d+\.\d+\.\d+$/;
 const UNREACHABLE_IPV4 = /^(127\.|169\.254\.)/;
 // Ports below this are system services, not dev servers.
 const MIN_DEV_PORT = 1024;
-const SHELL = /^-?(sh|bash|zsh|fish|dash|ksh|tcsh|csh|nu|pwsh)$/;
 
 export const LSOF_MISSING = process.platform === 'linux'
-  ? 'lsof isn\'t installed, so running servers can\'t be detected. Install it (for example `sudo apt install lsof`) or enter a port.'
-  : 'lsof isn\'t available, so running servers can\'t be detected. Enter a port instead.';
+  ? 'lsof isn\'t installed, so running servers can\'t be detected. Install it, for example with `sudo apt install lsof`.'
+  : 'lsof isn\'t available, so running servers can\'t be detected.';
 
 export interface DevServer {
   port: number;
@@ -114,22 +110,12 @@ export function isDevProcess(command: string): boolean {
   return DEV_PROCESS_NAMES.has(name) || name.startsWith('next-server');
 }
 
-export function isInside(dir: string | undefined, parent: string): boolean {
-  if (!dir) return false;
-  const prefix = parent.endsWith(path.sep) ? parent : parent + path.sep;
-  return dir === parent || dir.startsWith(prefix);
-}
-
-// Resolves symlinks (and on macOS the letter case), so paths compare equal to the ones lsof reports.
-export function realPath(dir: string): Promise<string> {
-  return new Promise(resolve => fs.realpath.native(dir, (err, resolved) => resolve(err ? dir : resolved)));
-}
-
 /**
  * Groups listening sockets into one server per port, keeping only likely dev servers.
  * When several processes listen on a port, the server is the one the phone would reach.
- * Live Server runs inside a VS Code extension host: this window's is `extensionHostPid`, which over
- * Remote SSH, WSL or in a container is a plain node process, not one named after VS Code.
+ * Live Server runs inside this window's extension host, `extensionHostPid`, which over Remote SSH, WSL
+ * or in a container is a plain node process. A Live Server in another window serves another project,
+ * and its setting can't be changed from here, so it isn't listed.
  */
 export function collectServers(processes: LsofProcess[], liveServerPort?: number, extensionHostPid?: number): DetectedServer[] {
   const byPort = new Map<number, { pid: number; label: string; kind: DevServer['kind']; host: string }[]>();
@@ -138,8 +124,7 @@ export function collectServers(processes: LsofProcess[], liveServerPort?: number
       const address = parseListenAddress(name);
       if (!address || address.port < MIN_DEV_PORT) continue;
 
-      const inVsCode = pid === extensionHostPid || VS_CODE_PROCESS.test(command);
-      const kind = inVsCode && address.port === liveServerPort ? 'liveServer'
+      const kind = pid === extensionHostPid && address.port === liveServerPort ? 'liveServer'
         : DOCKER_PROCESS.test(command) ? 'docker'
         : isDevProcess(command) ? 'process'
         : undefined;
@@ -207,66 +192,4 @@ export function pickRestartedServer(
 ): DetectedServer | undefined {
   const started = servers.filter(s => s.lanReachable && !pidsBefore.has(s.pid) && isInside(s.cwd, dir));
   return started.find(s => s.port === oldPort) ?? started[0];
-}
-
-export interface ProcessInfo {
-  pid: number;
-  ppid: number;
-  pgid: number;
-  // Executable name, without its directory.
-  name: string;
-}
-
-// Parses `ps -A -o pid=,ppid=,pgid=,comm=`. On macOS comm is the executable's full path.
-export function parsePs(stdout: string): Map<number, ProcessInfo> {
-  const processes = new Map<number, ProcessInfo>();
-  for (const line of stdout.split('\n')) {
-    const match = /^\s*(\d+)\s+(\d+)\s+(\d+)\s+(.*)$/.exec(line);
-    if (!match) continue;
-    const [, pid, ppid, pgid, comm] = match;
-    processes.set(Number(pid), { pid: Number(pid), ppid: Number(ppid), pgid: Number(pgid), name: path.basename(comm.trim()) });
-  }
-  return processes;
-}
-
-export async function listProcesses(): Promise<Map<number, ProcessInfo>> {
-  return parsePs((await execQuiet('ps', ['-A', '-o', 'pid=,ppid=,pgid=,comm='])) ?? '');
-}
-
-// Pid and its ancestors.
-export function ancestors(pid: number, processes: Map<number, ProcessInfo>): Set<number> {
-  const found = new Set<number>();
-  for (let p = processes.get(pid); p && !found.has(p.pid); p = processes.get(p.ppid)) found.add(p.pid);
-  return found;
-}
-
-// Listening pids that are neither in the server's job nor started by it (its workers).
-export function unrelatedListeners(listening: number[], jobPids: number[], processes: Map<number, ProcessInfo>): number[] {
-  const job = new Set(jobPids);
-  return listening.filter(pid => ![...ancestors(pid, processes)].some(p => job.has(p)));
-}
-
-/**
- * The processes to stop so the server on `pid` stays stopped, as Ctrl+C in its terminal would:
- * the server plus the ancestors in its process group that run its script (`scriptPids`, see
- * runningSameScript) and the package manager that ran it, up to but not including the shell it was
- * started from, which is returned too when there is one. Never climbs into VS Code, init,
- * `protectedPids`, or a tool running several scripts at once (concurrently, turbo…).
- */
-export function serverJob(
-  pid: number, processes: Map<number, ProcessInfo>, protectedPids: Set<number>, scriptPids: Set<number>,
-): { pids: number[]; shellPid?: number } {
-  const pids = [pid];
-  for (let current = processes.get(pid); current;) {
-    const parent = processes.get(current.ppid);
-    if (!parent || parent.pid <= 1 || protectedPids.has(parent.pid) || VS_CODE_PROCESS.test(parent.name)) break;
-    // A shell with job control runs each command in its own process group.
-    if (parent.pgid !== current.pgid) return { pids, shellPid: SHELL.test(parent.name) ? parent.pid : undefined };
-    // `current` is the package manager that ran the script, so `parent` started it as part of something
-    // bigger, which may be running other servers too. Stopping the script ends `current` anyway.
-    if (!scriptPids.has(current.pid)) break;
-    pids.push(parent.pid);
-    current = parent;
-  }
-  return { pids };
 }

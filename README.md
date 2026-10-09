@@ -1,12 +1,14 @@
 # Mobile Serve
 
 A small extension that gives you a QR code and URL to use on your mobile phone to test your project
-in real time, without having to look up your computer's IP address or dev server port.
+in real time, without having to look up your computer's IP address or dev server port. The URL works
+on any other device on the same network too: a tablet, another computer, a colleague's phone.
 
 This extension does *not* show a simulated phone inside VS Code. Like Live Server's **Go Live**, it
 starts your project on your computer (or uses the dev server you already have running), works out the
-address your phone can reach it on over Wi-Fi, and shows that address as a QR code. Scan the code with your phone's camera and the page opens in your phone's own browser:
-real touch, real screen size, real Safari or Chrome.
+address your phone can reach it on over Wi-Fi, and shows that address as a QR code. Scan the code
+with your phone's camera and the page opens in your phone's own browser: real touch, real screen
+size, real Safari or Chrome.
 
 ## Instructions
 
@@ -110,6 +112,16 @@ force quit or crashed, that happens the next time you open the workspace.
 In Restricted Mode (untrusted workspaces) the extension won't start or restart servers for you,
 because that runs scripts from the project's `package.json`. Plain HTML folders can still be served.
 
+## Reporting a problem
+
+Run **Mobile Serve: Show Log** from the Command Palette (or click **Show Log** on an error) to see
+what Mobile Serve did: the servers it found, what it started or stopped, and what went wrong. Paste it
+into an [issue](https://github.com/ManonLef/mobile-serve/issues), together with your operating system
+and how you started your project. The log contains folder paths and process IDs, so look it over
+first. It stays on your computer: Mobile Serve doesn't send anything anywhere.
+
+For more detail, run **Developer: Set Log Level…**, choose Mobile Serve and then **Debug**.
+
 ## Licenses
 
 Mobile Serve is MIT-licensed. The packages bundled into the extension are listed with their licenses
@@ -127,7 +139,7 @@ Needs Node.js 22.18 or newer. Run `npm install`, then:
 - `npm run install-dev` builds the extension and installs it into your everyday VS Code
   (`~/.vscode/extensions`): over the installed copy if there is one, or else as `mobile-serve-dev`.
   Run **Developer: Reload Window** afterwards.
-- `npx @vscode/vsce package` builds the `.vsix`.
+- `npx @vscode/vsce@4 package` builds the `.vsix`.
 
 The source in `src/` is TypeScript using ES modules. esbuild bundles it into a single CommonJS
 file, `dist/extension.js`, because that's the format VS Code loads extensions in. The small `package.json`

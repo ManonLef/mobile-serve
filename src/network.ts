@@ -2,6 +2,7 @@ import * as os from 'node:os';
 import * as net from 'node:net';
 import * as tls from 'node:tls';
 import { execQuiet } from './exec.ts';
+import { describe, log } from './log.ts';
 
 // Loopback, VPN, virtual machine, container, Hyper-V/WSL and Apple peer-to-peer interfaces.
 // Loopback is matched whole: on Windows, Ethernet adapters can be called "Local Area Connection".
@@ -44,15 +45,19 @@ async function defaultRouteInterface(): Promise<string | undefined> {
     if (process.platform === 'linux') {
       return /\bdev\s+(\S+)/.exec((await execQuiet('ip', ['route', 'show', 'default'])) ?? '')?.[1];
     }
-  } catch {
+  } catch (err) {
     // Fall back to ranking by address alone.
+    log.debug(`Couldn't find the default route's interface: ${describe(err)}`);
   }
   return undefined;
 }
 
 // IPv4 addresses a phone on the same network could use, the most likely one first.
 export async function getLanAddresses(): Promise<LanAddress[]> {
-  return rankAddresses(os.networkInterfaces(), await defaultRouteInterface());
+  const defaultInterface = await defaultRouteInterface();
+  const addresses = rankAddresses(os.networkInterfaces(), defaultInterface);
+  log.debug(`Network addresses: ${addresses.map(a => `${a.address} (${a.name})`).join(', ') || 'none'}; default route through ${defaultInterface ?? 'unknown'}.`);
+  return addresses;
 }
 
 // Whether something accepts TCP connections on host:port.

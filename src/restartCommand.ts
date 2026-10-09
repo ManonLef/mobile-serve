@@ -3,19 +3,15 @@
 import * as fs from 'node:fs/promises';
 import * as path from 'node:path';
 import { execQuiet } from './exec.ts';
-import { ancestors, isInside, type DetectedServer, type ProcessInfo } from './servers.ts';
-import { TOOLS, SAFE_SCRIPT_NAME, scriptTool, runScriptArgs } from './tools.ts';
+import { log } from './log.ts';
+import { PACKAGE_MANAGERS, detectPackageManager, runScriptArgs } from './packageManager.ts';
+import { isInside } from './paths.ts';
+import { ancestors, type ProcessInfo } from './processes.ts';
+import type { DetectedServer } from './servers.ts';
+import { TOOLS, SAFE_SCRIPT_NAME, scriptTool } from './tools.ts';
 
 // Runtimes that run a tool's script file; the tool is the first argument after their options.
 const RUNTIMES = new Set(['node', 'nodejs', 'bun', 'deno']);
-const PACKAGE_MANAGERS = ['npm', 'pnpm', 'yarn', 'bun'];
-const LOCKFILES = [
-  ['pnpm-lock.yaml', 'pnpm'],
-  ['yarn.lock', 'yarn'],
-  ['bun.lockb', 'bun'],
-  ['bun.lock', 'bun'],
-  ['package-lock.json', 'npm'],
-];
 
 // The program arguments run, such as "vite" for ["node", "/app/node_modules/vite/bin/vite.js", "--port", "3000"].
 // Only the first word of a name counts, so a process title like "next-server (v14.2.0)" gives "next-server".
@@ -154,33 +150,6 @@ export function buildNetworkCommand({ script, body, program, packageManager }: {
   return [packageManager, ...runScriptArgs(packageManager, script, runningTool.hostArgs)].join(' ');
 }
 
-async function readPackageManagerField(dir: string): Promise<string | undefined> {
-  try {
-    const field = JSON.parse(await fs.readFile(path.join(dir, 'package.json'), 'utf8')).packageManager;
-    const name = typeof field === 'string' ? field.split('@')[0] : undefined;
-    return name && PACKAGE_MANAGERS.includes(name) ? name : undefined;
-  } catch {
-    return undefined;
-  }
-}
-
-// Looks in `dir` and the folders above it, so packages in a monorepo use the repo's package manager.
-export async function detectPackageManager(dir: string): Promise<string> {
-  for (let current = dir; ; current = path.dirname(current)) {
-    const field = await readPackageManagerField(current);
-    if (field) return field;
-    for (const [lockfile, manager] of LOCKFILES) {
-      try {
-        await fs.access(path.join(current, lockfile));
-        return manager;
-      } catch {
-        // Not this one.
-      }
-    }
-    if (path.dirname(current) === current) return 'npm';
-  }
-}
-
 /**
  * The command that runs the server's own package.json script again with the tool's host flag, the
  * command that runs it without (to go back to localhost), and the folder to run them in.
@@ -189,20 +158,23 @@ export async function detectPackageManager(dir: string): Promise<string> {
 export async function findNetworkCommand(
   server: DetectedServer,
 ): Promise<{ command: string; localCommand: string; dir: string } | undefined> {
-  if (!server.cwd || !server.inProject) return;
+  const skip = (reason: string) => void log.info(`No restart offered for port ${server.port}: ${reason}.`);
+  if (!server.cwd || !server.inProject) return skip('it doesn\'t run from this project');
   const env = parseScriptEnv(await readEnvironment(server.pid));
-  if (!env) return;
+  if (!env) return skip('it wasn\'t started by a package.json script');
   const dir = env.packageJson ? path.dirname(env.packageJson) : server.cwd;
   // A variable inherited from elsewhere (VS Code itself started by a script, say) points away from the server.
-  if (!isInside(server.cwd, dir)) return;
+  if (!isInside(server.cwd, dir)) return skip(`its script comes from ${dir}, outside the folder it runs in`);
 
   let scripts: unknown;
   try {
     scripts = JSON.parse(await fs.readFile(path.join(dir, 'package.json'), 'utf8')).scripts;
   } catch {
-    return;
+    return skip(`${path.join(dir, 'package.json')} can't be read`);
   }
-  if (!scripts || typeof scripts !== 'object' || !Object.hasOwn(scripts, env.event)) return;
+  if (!scripts || typeof scripts !== 'object' || !Object.hasOwn(scripts, env.event)) {
+    return skip(`package.json has no “${env.event}” script any more`);
+  }
 
   const packageManager = env.packageManager ?? await detectPackageManager(dir);
   const command = buildNetworkCommand({
@@ -212,5 +184,6 @@ export async function findNetworkCommand(
     packageManager,
   });
   // buildNetworkCommand has checked the script name is safe in a shell command.
-  return command ? { command, localCommand: `${packageManager} run ${env.event}`, dir } : undefined;
+  if (!command) return skip(`the “${env.event}” script doesn't just run the tool that's running, or already sets a host`);
+  return { command, localCommand: `${packageManager} run ${env.event}`, dir };
 }

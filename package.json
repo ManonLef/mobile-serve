@@ -1,7 +1,7 @@
 {
   "name": "mobile-serve",
   "displayName": "Mobile Serve",
-  "description": "Open your project on your real phone, like Go Live: start it or pick a running server, scan a QR code, done.",
+  "description": "Open your project on your real phone, or any device on your network, like Go Live: start it or pick a running server, scan a QR code, done.",
   "version": "0.1.1",
   "publisher": "local",
   "license": "MIT",
@@ -12,6 +12,10 @@
   "main": "./dist/extension.js",
   "activationEvents": ["onStartupFinished"],
   "capabilities": {
+    "virtualWorkspaces": {
+      "supported": false,
+      "description": "Mobile Serve starts servers from the project's files on this computer, so it needs them on disk."
+    },
     "untrustedWorkspaces": {
       "supported": "limited",
       "description": "In Restricted Mode the extension won't start or restart dev servers, because that runs scripts from the project's package.json. Plain HTML folders can still be served."
@@ -19,8 +23,9 @@
   },
   "contributes": {
     "commands": [
-      { "command": "mobileServe.show", "title": "Mobile Serve: Show Phone URL" },
-      { "command": "mobileServe.stop", "title": "Mobile Serve: Stop Sharing on the Network" }
+      { "command": "mobileServe.show", "title": "Show Phone URL", "category": "Mobile Serve" },
+      { "command": "mobileServe.stop", "title": "Stop Sharing on the Network", "category": "Mobile Serve" },
+      { "command": "mobileServe.showLog", "title": "Show Log", "category": "Mobile Serve" }
     ],
     "taskDefinitions": [
       {

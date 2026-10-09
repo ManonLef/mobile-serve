@@ -1,6 +1,9 @@
 import * as vscode from 'vscode';
 import { toDataURL } from 'qrcode';
-import { findDevServers, realPath, LSOF_MISSING, type DevServer } from './servers.ts';
+import { SHOW_COMMAND, SHOW_LOG_COMMAND, STOP_COMMAND } from './commands.ts';
+import { describe, log, setLogger } from './log.ts';
+import { realPath } from './paths.ts';
+import { findDevServers, LSOF_MISSING, type DevServer } from './servers.ts';
 import { getLanAddresses, probe } from './network.ts';
 import { makeReachable } from './makeReachable.ts';
 import { showPanel, disposePanel } from './panel.ts';
@@ -9,8 +12,6 @@ import { findStartOptions, startOption, type StartOption } from './start.ts';
 import { describePlan } from './projectStart.ts';
 import type { PageUrl } from './page.ts';
 
-const COMMAND = 'mobileServe.show';
-const STOP_COMMAND = 'mobileServe.stop';
 const DEFAULT_LIVE_SERVER_PORT = 5500;
 // Server detection relies on lsof, which Windows doesn't have.
 const CAN_DETECT_SERVERS = process.platform !== 'win32';
@@ -22,9 +23,10 @@ type Target = { start: StartOption } | { server: DevServer };
 // The port the panel offers to stop sharing, if it does.
 let panelSharedPort: number | undefined;
 
-// Servers running from the open project, or a message saying why there are none.
+// Servers running from the open project, or a message saying why there are none. The message is
+// shown with "Enter a port", which still works.
 async function findWorkspaceServers(): Promise<{ servers: DevServer[]; problem?: string }> {
-  if (!CAN_DETECT_SERVERS) return { servers: [], problem: 'Detecting servers isn\'t supported on Windows — enter a port' };
+  if (!CAN_DETECT_SERVERS) return { servers: [], problem: 'Detecting servers isn\'t supported on Windows' };
   // 0 means Live Server picks a random port, which can't be told apart from VS Code's other ports.
   const liveServerPort = vscode.workspace.getConfiguration('liveServer.settings').get<number>('port') ?? DEFAULT_LIVE_SERVER_PORT;
   try {
@@ -35,14 +37,17 @@ async function findWorkspaceServers(): Promise<{ servers: DevServer[]; problem?:
       // lsof reports real paths, so symlinked workspace folders have to be resolved to match.
       workspaceFolders: await Promise.all((vscode.workspace.workspaceFolders || []).map(folder => realPath(folder.uri.fsPath))),
     });
+    log.debug(`Servers found: ${servers.map(s => `${s.port} ${s.label} (pid ${s.pid}, ${s.lanReachable ? 'on the network' : 'localhost only'}, ` +
+      `${s.inProject ? 'in this project' : `from ${s.cwd ?? 'an unknown folder'}`})`).join('; ') || 'none'}.`);
     // Servers Mobile Serve started are offered through their folder instead.
     const started = new Set(currentShares().filter(s => s.kind === 'task' || s.kind === 'static').map(s => s.port));
     const inProject = servers.filter(s => s.inProject && !started.has(s.port));
-    return { servers: inProject, problem: inProject.length ? undefined : 'No servers running in this project — enter a port' };
+    return { servers: inProject, problem: inProject.length ? undefined : 'No servers running in this project' };
   } catch (err) {
     // Starting the project or entering a port still works, so the list stays open.
-    const message = err instanceof Error ? err.message : String(err);
-    return { servers: [], problem: message === LSOF_MISSING ? message : `Couldn't look for running servers (${message}) — enter a port` };
+    const message = describe(err);
+    log.warn(`Couldn't look for running servers: ${message}`);
+    return { servers: [], problem: message === LSOF_MISSING ? message : `Couldn't look for running servers (${message})` };
   }
 }
 
@@ -61,7 +66,7 @@ function startItem(option: StartOption): ServerItem {
   };
 }
 
-function serverItems(starts: StartOption[], servers: DevServer[]): ServerItem[] {
+function serverItems(starts: StartOption[], servers: DevServer[], problem?: string): ServerItem[] {
   const separator = (label: string): ServerItem => ({ label, kind: vscode.QuickPickItemKind.Separator });
   const toItem = (server: DevServer): ServerItem => ({
     label: `$(radio-tower) ${server.port}`,
@@ -72,7 +77,7 @@ function serverItems(starts: StartOption[], servers: DevServer[]): ServerItem[] 
 
   const items = starts.map(startItem);
   if (servers.length) items.push(separator('Running in this project'), ...servers.map(toItem));
-  items.push(separator(''), { label: '$(edit) Enter a port…', manual: true });
+  items.push(separator(''), { label: '$(edit) Enter a port…', detail: problem, manual: true });
   return items;
 }
 
@@ -95,8 +100,10 @@ async function chooseItem(): Promise<ServerItem | undefined> {
 
   const filled = findWorkspaceServers().then(({ servers, problem }) => {
     if (!open) return;
-    quickPick.items = serverItems(starts, servers);
-    quickPick.placeholder = starts.length ? 'Start this project for your phone, or pick a running server' : problem ?? 'Running servers';
+    quickPick.items = serverItems(starts, servers, problem);
+    quickPick.placeholder = starts.length ? 'Start this project for your phone, or pick a running server'
+      : servers.length ? 'Pick a running server, or enter a port'
+      : 'Enter the port of a running server';
     quickPick.busy = false;
   });
   try {
@@ -128,6 +135,7 @@ async function pickTarget(): Promise<Target | undefined> {
 async function show(): Promise<void> {
   const addresses = await getLanAddresses();
   if (!addresses.length) {
+    log.warn('No network address found.');
     vscode.window.showErrorMessage('No network connection found. Connect to Wi-Fi and try again.');
     return;
   }
@@ -145,6 +153,7 @@ async function show(): Promise<void> {
   const { listening, https } = await probe(usable[0].address, port);
   const scheme = https ? 'https' : 'http';
   const [first, ...rest] = usable.map((a): PageUrl => ({ name: a.name, url: `${scheme}://${a.address}:${port}` }));
+  log.info(`Showing ${first.url}${listening ? '' : ', which doesn\'t answer from this computer'}.`);
   const qr = await toDataURL(first.url, { margin: 1, width: 320 });
   // A server restarted by hand since isn't Mobile Serve's to stop, which the regular check may not have noticed yet.
   await dropStoppedServers();
@@ -164,7 +173,7 @@ function updateStatusBar(item: vscode.StatusBarItem): void {
   if (!ports.length) {
     item.text = '$(device-mobile) Mobile';
     item.tooltip = 'Show a QR code to open a local dev server on your phone';
-    item.command = COMMAND;
+    item.command = SHOW_COMMAND;
     item.backgroundColor = undefined;
     return;
   }
@@ -177,18 +186,28 @@ function updateStatusBar(item: vscode.StatusBarItem): void {
   item.backgroundColor = new vscode.ThemeColor('statusBarItem.warningBackground');
 }
 
-// Runs a command, showing any error it ends with.
+// Runs a command, showing any error it ends with, with a way to the log for reporting it.
 function reportingErrors(run: () => Promise<void>): () => Promise<void> {
   return async () => {
     try {
       await run();
     } catch (err) {
-      vscode.window.showErrorMessage(`Mobile Serve: ${err instanceof Error ? err.message : String(err)}`);
+      log.error(err instanceof Error ? err : describe(err));
+      const showLog = 'Show Log';
+      if (await vscode.window.showErrorMessage(`Mobile Serve: ${describe(err)}`, showLog) === showLog) {
+        await vscode.commands.executeCommand(SHOW_LOG_COMMAND);
+      }
     }
   };
 }
 
 export function activate(context: vscode.ExtensionContext): void {
+  // First, so picking up shares from the last session is logged too.
+  const output = vscode.window.createOutputChannel('Mobile Serve', { log: true });
+  setLogger(output);
+  log.info(`Mobile Serve ${context.extension.packageJSON.version} in VS Code ${vscode.version} on ${process.platform}` +
+    `${vscode.env.remoteName ? `, connected to ${vscode.env.remoteName}` : ''}.`);
+  context.subscriptions.push(output, { dispose: () => setLogger(undefined) });
   registerSharing(context);
   const item = vscode.window.createStatusBarItem('mobileServe.status', vscode.StatusBarAlignment.Right, 100);
   item.name = 'Mobile Serve';
@@ -205,7 +224,7 @@ export function activate(context: vscode.ExtensionContext): void {
         disposePanel();
       }
     }),
-    vscode.commands.registerCommand(COMMAND, reportingErrors(show)),
+    vscode.commands.registerCommand(SHOW_COMMAND, reportingErrors(show)),
     vscode.commands.registerCommand(STOP_COMMAND, reportingErrors(async () => {
       if (!currentShares().length) {
         vscode.window.showInformationMessage('Mobile Serve isn\'t sharing anything on your network.');
@@ -216,6 +235,7 @@ export function activate(context: vscode.ExtensionContext): void {
       disposePanel();
       await closeAll();
     })),
+    vscode.commands.registerCommand(SHOW_LOG_COMMAND, () => output.show()),
     { dispose: disposePanel },
   );
 }

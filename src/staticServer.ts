@@ -4,7 +4,8 @@ import * as fs from 'node:fs';
 import * as http from 'node:http';
 import { isIP, type AddressInfo } from 'node:net';
 import * as path from 'node:path';
-import { isInside } from './servers.ts';
+import { describe, log } from './log.ts';
+import { isInside } from './paths.ts';
 
 // Reserved for the reload connection. Can't clash with a file, since the folder is served as it is.
 const RELOAD_PATH = '/__mobile-serve/reload';
@@ -14,12 +15,18 @@ const RELOAD_DELAY_MS = 100;
 const CONTENT_TYPES: Record<string, string> = {
   '.html': 'text/html; charset=utf-8', '.htm': 'text/html; charset=utf-8',
   '.css': 'text/css; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.mjs': 'text/javascript; charset=utf-8',
+  '.cjs': 'text/javascript; charset=utf-8',
   '.json': 'application/json; charset=utf-8', '.map': 'application/json; charset=utf-8',
-  '.txt': 'text/plain; charset=utf-8', '.xml': 'application/xml; charset=utf-8', '.webmanifest': 'application/manifest+json',
+  '.txt': 'text/plain; charset=utf-8', '.md': 'text/markdown; charset=utf-8', '.csv': 'text/csv; charset=utf-8',
+  '.xml': 'application/xml; charset=utf-8', '.webmanifest': 'application/manifest+json',
   '.svg': 'image/svg+xml', '.png': 'image/png', '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg', '.gif': 'image/gif',
   '.webp': 'image/webp', '.avif': 'image/avif', '.ico': 'image/x-icon',
   '.woff': 'font/woff', '.woff2': 'font/woff2', '.ttf': 'font/ttf', '.otf': 'font/otf',
-  '.mp4': 'video/mp4', '.webm': 'video/webm', '.mp3': 'audio/mpeg', '.wav': 'audio/wav', '.ogg': 'audio/ogg',
+  '.mp4': 'video/mp4', '.webm': 'video/webm', '.mov': 'video/quicktime', '.m4a': 'audio/mp4',
+  '.mp3': 'audio/mpeg', '.wav': 'audio/wav', '.ogg': 'audio/ogg',
+  // Browsers ignore subtitle tracks served as anything else.
+  '.vtt': 'text/vtt; charset=utf-8',
+  '.gltf': 'model/gltf+json', '.glb': 'model/gltf-binary',
   '.pdf': 'application/pdf', '.wasm': 'application/wasm',
 };
 
@@ -80,6 +87,23 @@ export function isAllowedHost(host: string | undefined): boolean {
   return !!hostname && (hostname.toLowerCase() === 'localhost' || isIP(hostname) !== 0);
 }
 
+/**
+ * The part of a file a Range header asks for. iOS Safari only plays video and audio from a server
+ * that answers these. Undefined when the whole file should be sent: no Range header, or one this
+ * server doesn't handle, such as several ranges at once.
+ */
+export function parseRange(header: string | undefined, size: number): { start: number; end: number } | 'unsatisfiable' | undefined {
+  const match = /^bytes=(\d*)-(\d*)$/.exec(header?.trim() ?? '');
+  if (!match || (!match[1] && !match[2])) return undefined;
+  const [, from, to] = match;
+  // An end before the start makes the header invalid, so it's ignored.
+  if (from && to && Number(to) < Number(from)) return undefined;
+  // "bytes=-500" asks for the last 500 bytes.
+  const start = from ? Number(from) : Math.max(0, size - Number(to));
+  const end = from && to ? Math.min(Number(to), size - 1) : size - 1;
+  return start < size && start <= end ? { start, end } : 'unsatisfiable';
+}
+
 function send(res: http.ServerResponse, status: number, text: string, headers: http.OutgoingHttpHeaders = {}): void {
   res.writeHead(status, { 'Content-Type': 'text/plain; charset=utf-8', ...headers });
   res.end(text);
@@ -95,7 +119,10 @@ export function startStaticServer(root: string, port: number): Promise<StaticSer
   let onlyCss = true;
 
   const handle = async (req: http.IncomingMessage, res: http.ServerResponse): Promise<void> => {
-    if (!isAllowedHost(req.headers.host)) return send(res, 403, 'Open this page by its IP address');
+    if (!isAllowedHost(req.headers.host)) {
+      log.info(`Refused a request for ${req.headers.host ?? 'no host'}: the static server only answers to IP addresses and localhost.`);
+      return send(res, 403, 'Open this page by its IP address');
+    }
     if (req.method !== 'GET' && req.method !== 'HEAD') return send(res, 405, 'Method not allowed', { Allow: 'GET, HEAD' });
     const urlPath = req.url ?? '/';
     if (urlPath.split('?')[0] === RELOAD_PATH) {
@@ -136,22 +163,34 @@ export function startStaticServer(root: string, port: number): Promise<StaticSer
       res.end(req.method === 'HEAD' ? undefined : html);
       return;
     }
-    res.writeHead(200, { ...headers, 'Content-Length': stat.size });
+    const range = parseRange(req.headers.range, stat.size);
+    if (range === 'unsatisfiable') return send(res, 416, 'Range not satisfiable', { 'Content-Range': `bytes */${stat.size}` });
+    res.writeHead(range ? 206 : 200, {
+      ...headers,
+      'Accept-Ranges': 'bytes',
+      'Content-Length': range ? range.end - range.start + 1 : stat.size,
+      ...(range && { 'Content-Range': `bytes ${range.start}-${range.end}/${stat.size}` }),
+    });
     if (req.method === 'HEAD') return void res.end();
-    fs.createReadStream(file).on('error', () => res.destroy()).pipe(res);
+    fs.createReadStream(file, range).on('error', () => res.destroy()).pipe(res);
   };
 
   const server = http.createServer((req, res) => {
-    handle(req, res).catch(() => {
+    handle(req, res).catch(err => {
+      log.warn(`Static server: ${req.url} failed: ${describe(err)}`);
       if (!res.headersSent) send(res, 500, 'Could not read the file');
       else res.destroy();
     });
   });
 
   return new Promise((resolve, reject) => {
-    server.once('error', reject);
+    // Fails the start when the port is taken. Kept afterwards, when rejecting does nothing: an error
+    // there (too many open files, say) would otherwise be thrown in the extension host.
+    server.on('error', err => {
+      log.warn(`Static server on port ${port}: ${describe(err)}`);
+      reject(err);
+    });
     server.listen(port, () => {
-      server.off('error', reject);
       resolve({
         // The port asked for, or the one picked when that was 0.
         port: (server.address() as AddressInfo).port,
