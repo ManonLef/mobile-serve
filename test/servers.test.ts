@@ -1,7 +1,11 @@
 import { test } from 'node:test';
 import assert from 'node:assert';
+import { spawn } from 'node:child_process';
+import * as fs from 'node:fs/promises';
+import * as os from 'node:os';
+import * as path from 'node:path';
 import {
-  lsofOutput, parseLsof, parseListenAddress, isDevProcess, isInside, isLanHost, collectServers, pickRestartedServer, parsePs, serverJob, unrelatedListeners,
+  listensFrom, lsofOutput, parseLsof, parseListenAddress, isDevProcess, isInside, isLanHost, collectServers, pickRestartedServer, parsePs, serverJob, unrelatedListeners,
   type DetectedServer,
 } from '../src/servers.ts';
 
@@ -162,4 +166,17 @@ test('collectServers finds Live Server in this window\'s extension host, even wh
   const processes = [{ pid: 7, command: 'node', names: ['127.0.0.1:5500'] }, { pid: 8, command: 'node', names: ['127.0.0.1:3000'] }];
   assert.deepStrictEqual(collectServers(processes, 5500, 7).map(s => [s.port, s.kind, s.label]), [[5500, 'liveServer', 'Live Server'], [3000, 'process', 'node']]);
   assert.deepStrictEqual(collectServers(processes, 5500, 99).map(s => s.kind), ['process', 'process']);
+});
+
+test('listensFrom tells the folder a server runs from', { skip: process.platform === 'win32' && 'needs lsof' }, async () => {
+  const dir = await fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(), 'mobile-serve-')));
+  const server = spawn(process.execPath, ['-e', 'require("net").createServer().listen(0, function () { console.log(this.address().port) })'], { cwd: dir });
+  try {
+    const port = await new Promise<number>(resolve => server.stdout.once('data', data => resolve(Number(String(data)))));
+    assert.strictEqual(await listensFrom(port, dir), true);
+    assert.strictEqual(await listensFrom(port, path.join(dir, 'other')), false);
+  } finally {
+    server.kill();
+    await fs.rm(dir, { recursive: true, force: true });
+  }
 });

@@ -2,7 +2,7 @@
 // Live Server. Files and folders starting with "." (.env, .git…) are never served.
 import * as fs from 'node:fs';
 import * as http from 'node:http';
-import type { AddressInfo } from 'node:net';
+import { isIP, type AddressInfo } from 'node:net';
 import * as path from 'node:path';
 import { isInside } from './servers.ts';
 
@@ -51,6 +51,11 @@ export function injectReloadScript(html: string): string {
   return end === -1 ? html + RELOAD_SCRIPT : html.slice(0, end) + RELOAD_SCRIPT + html.slice(end);
 }
 
+// Whether a path has a part starting with "." (.env, .git…). Backslashes too, which Windows reads as separators.
+function isHidden(file: string): boolean {
+  return file.split(/[\\/]/).some(part => part.startsWith('.'));
+}
+
 // The file a request path refers to, or undefined when it's outside `root` or hidden.
 export function resolveRequestPath(root: string, urlPath: string): string | undefined {
   let pathname: string;
@@ -59,10 +64,20 @@ export function resolveRequestPath(root: string, urlPath: string): string | unde
   } catch {
     return undefined;
   }
-  // Backslashes too, which Windows reads as separators.
-  if (pathname.includes('\0') || pathname.split(/[\\/]/).some(part => part.startsWith('.'))) return undefined;
+  if (pathname.includes('\0') || isHidden(pathname)) return undefined;
   const file = path.join(root, pathname);
   return isInside(file, root) ? file : undefined;
+}
+
+/**
+ * Whether a request's Host header is an IP address or localhost, which is all the phone and this
+ * computer use. A website that points its own name at this computer (DNS rebinding) sends that name,
+ * so it can't read the folder from the visitor's browser.
+ */
+export function isAllowedHost(host: string | undefined): boolean {
+  const match = /^(?:\[([^\]]+)\]|([^:\[\]]+))(?::\d+)?$/.exec(host ?? '');
+  const hostname = match?.[1] ?? match?.[2];
+  return !!hostname && (hostname.toLowerCase() === 'localhost' || isIP(hostname) !== 0);
 }
 
 function send(res: http.ServerResponse, status: number, text: string, headers: http.OutgoingHttpHeaders = {}): void {
@@ -80,6 +95,7 @@ export function startStaticServer(root: string, port: number): Promise<StaticSer
   let onlyCss = true;
 
   const handle = async (req: http.IncomingMessage, res: http.ServerResponse): Promise<void> => {
+    if (!isAllowedHost(req.headers.host)) return send(res, 403, 'Open this page by its IP address');
     if (req.method !== 'GET' && req.method !== 'HEAD') return send(res, 405, 'Method not allowed', { Allow: 'GET, HEAD' });
     const urlPath = req.url ?? '/';
     if (urlPath.split('?')[0] === RELOAD_PATH) {
@@ -94,9 +110,10 @@ export function startStaticServer(root: string, port: number): Promise<StaticSer
     if (!file) return send(res, 404, 'Not found');
     let stat: fs.Stats;
     try {
-      // A symlink pointing out of the folder isn't served either.
+      // Nor is a symlink pointing out of the folder, or to a hidden file in it. Resolving also turns a
+      // Windows short name (ENV~1) into the real one (.env).
       file = await fs.promises.realpath(file);
-      if (!isInside(file, root)) return send(res, 404, 'Not found');
+      if (!isInside(file, root) || isHidden(path.relative(root, file))) return send(res, 404, 'Not found');
       stat = await fs.promises.stat(file);
       if (stat.isDirectory()) {
         // Relative links in the folder's index.html need the trailing slash.
@@ -139,7 +156,7 @@ export function startStaticServer(root: string, port: number): Promise<StaticSer
         // The port asked for, or the one picked when that was 0.
         port: (server.address() as AddressInfo).port,
         fileChanged(file) {
-          if (file.split(/[\\/]/).some(part => part.startsWith('.'))) return;
+          if (isHidden(file)) return;
           onlyCss &&= path.extname(file).toLowerCase() === '.css';
           clearTimeout(reloadTimer);
           reloadTimer = setTimeout(() => {

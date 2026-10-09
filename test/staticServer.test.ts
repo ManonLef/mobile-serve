@@ -4,7 +4,7 @@ import * as fs from 'node:fs/promises';
 import * as http from 'node:http';
 import * as os from 'node:os';
 import * as path from 'node:path';
-import { injectReloadScript, resolveRequestPath, startStaticServer, type StaticServer } from '../src/staticServer.ts';
+import { injectReloadScript, isAllowedHost, resolveRequestPath, startStaticServer, type StaticServer } from '../src/staticServer.ts';
 
 test('injectReloadScript goes before </body>, or at the end without one', () => {
   const page = injectReloadScript('<html><body><p>Hi</p></BODY></html>');
@@ -23,6 +23,15 @@ test('resolveRequestPath stays inside the folder and skips hidden files', () => 
   }
 });
 
+test('isAllowedHost accepts IP addresses and localhost, not other names', () => {
+  for (const host of ['192.168.1.20:5600', '127.0.0.1', '[::1]:5600', '[fe80::1]', 'localhost:5600', 'LOCALHOST']) {
+    assert.strictEqual(isAllowedHost(host), true, host);
+  }
+  for (const host of [undefined, '', 'evil.example', 'evil.example:5600', 'my-mac.local:5600', 'evil.example@127.0.0.1', '127.0.0.1/x', '[evil.example]']) {
+    assert.strictEqual(isAllowedHost(host), false, String(host));
+  }
+});
+
 // The folder a plain HTML project would have, plus a file next to it that must not be reachable.
 async function site(): Promise<{ root: string; cleanup: () => Promise<void> }> {
   const parent = await fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(), 'mobile-serve-')));
@@ -32,15 +41,18 @@ async function site(): Promise<{ root: string; cleanup: () => Promise<void> }> {
   await fs.writeFile(path.join(root, 'style.css'), 'h1 { color: red }');
   await fs.writeFile(path.join(root, 'blog', 'index.html'), '<h1>Blog</h1>');
   await fs.writeFile(path.join(root, '.env'), 'SECRET=1');
+  await fs.mkdir(path.join(root, '.git'));
+  await fs.writeFile(path.join(root, '.git', 'config'), 'SECRET=2');
+  await fs.symlink(path.join(root, '.git'), path.join(root, 'public'));
   await fs.writeFile(path.join(parent, 'outside.txt'), 'outside');
   await fs.symlink(path.join(parent, 'outside.txt'), path.join(root, 'link.txt'));
   return { root, cleanup: () => fs.rm(parent, { recursive: true, force: true }) };
 }
 
 // Sends the path exactly as given, without the normalising a browser or fetch would do.
-function get(server: StaticServer, urlPath: string): Promise<{ status: number; headers: http.IncomingHttpHeaders; body: string }> {
+function get(server: StaticServer, urlPath: string, headers: http.OutgoingHttpHeaders = {}): Promise<{ status: number; headers: http.IncomingHttpHeaders; body: string }> {
   return new Promise((resolve, reject) => {
-    http.get({ host: '127.0.0.1', port: server.port, path: urlPath }, res => {
+    http.get({ host: '127.0.0.1', port: server.port, path: urlPath, headers }, res => {
       let body = '';
       res.setEncoding('utf8').on('data', chunk => body += chunk).on('end', () => resolve({ status: res.statusCode!, headers: res.headers, body }));
     }).on('error', reject);
@@ -74,11 +86,15 @@ test('never serves hidden files, or files outside the folder', async () => {
   const { root, cleanup } = await site();
   const server = await startStaticServer(root, 0);
   try {
-    for (const url of ['/.env', '/%2e%2e/outside.txt', '/../outside.txt', '/link.txt', '/missing.html']) {
+    for (const url of ['/.env', '/%2e%2e/outside.txt', '/../outside.txt', '/link.txt', '/public/config', '/missing.html']) {
       const res = await get(server, url);
       assert.strictEqual(res.status, 404, url);
       assert.ok(!/SECRET|outside/.test(res.body), url);
     }
+    // Reached through another site's name, as DNS rebinding would.
+    const rebound = await get(server, '/', { Host: 'evil.example:' + server.port });
+    assert.strictEqual(rebound.status, 403);
+    assert.ok(!/Home/.test(rebound.body));
   } finally {
     await server.close();
     await cleanup();

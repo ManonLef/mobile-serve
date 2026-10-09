@@ -6,7 +6,7 @@ import * as net from 'node:net';
 import * as path from 'node:path';
 import { canConnect } from './network.ts';
 import { detectPackageManager } from './restartCommand.ts';
-import { SAFE_SCRIPT_NAME, scriptTool, runScriptArgs, type Tool } from './tools.ts';
+import { SAFE_SCRIPT_NAME, devServerTool, runScriptArgs, type Tool } from './tools.ts';
 
 // Tried in this order. "start" is often a production server, so a dev script wins.
 const SCRIPT_NAMES = ['dev', 'start', 'serve'];
@@ -51,7 +51,7 @@ export async function planStart(dir: string): Promise<StartPlan | undefined> {
     : [];
   for (const script of names) {
     const body = (scripts as Record<string, unknown>)[script];
-    const tool = scriptTool(body);
+    const tool = devServerTool(body);
     if (!tool || !SAFE_SCRIPT_NAME.test(script) || BUILDS.test(body as string)) continue;
     const port = SETS_PORT.exec(body as string);
     // A port set some other way (from a variable, say) can't be known in advance.

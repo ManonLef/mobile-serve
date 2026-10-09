@@ -39,6 +39,15 @@ test('falls back to start or serve when dev isn\'t a server it knows', async () 
   });
 });
 
+test('skips scripts that run a production server or only build', async () => {
+  await project(scripts({ start: 'next start' }), async dir => {
+    assert.strictEqual(await planStart(dir), undefined);
+  });
+  await project(scripts({ dev: 'webpack --mode development --watch', serve: 'webpack serve' }), async dir => {
+    assert.strictEqual(commandFor(await planStart(dir), 8080), 'npm run serve -- --host 0.0.0.0 --port 8080');
+  });
+});
+
 test('keeps a port the script sets, and skips one it can\'t read', async () => {
   await project(scripts({ dev: 'next dev -p 4000' }), async dir => {
     const plan = await planStart(dir);

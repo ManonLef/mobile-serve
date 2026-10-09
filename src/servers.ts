@@ -194,6 +194,12 @@ export async function listeningPids(port: number): Promise<number[]> {
   return stdout.split('\n').filter(Boolean).map(Number);
 }
 
+// Whether a process running from `dir` (a real path, see realPath) listens on `port`.
+export async function listensFrom(port: number, dir: string): Promise<boolean> {
+  const dirs = await getWorkingDirs(await listeningPids(port));
+  return [...dirs.values()].some(cwd => isInside(cwd, dir));
+}
+
 // After a restart, picks the server that the restart started: one that wasn't running before,
 // runs from `dir` and is reachable, preferring the port the old server had.
 export function pickRestartedServer(

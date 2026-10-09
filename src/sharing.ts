@@ -2,7 +2,7 @@
 import * as path from 'node:path';
 import * as vscode from 'vscode';
 import { canConnect, getLanAddresses } from './network.ts';
-import { listeningPids } from './servers.ts';
+import { listeningPids, listensFrom, realPath } from './servers.ts';
 import { restartLocally } from './restart.ts';
 import { restoreSettingInFile } from './settingsFile.ts';
 
@@ -213,6 +213,16 @@ async function liveServerOnNetwork(port: number): Promise<boolean> {
   return !!address && await canConnect(address.address, port);
 }
 
+// Whether the task's server still runs from its folder, for when VS Code hasn't reconnected the task (yet).
+// Without lsof (on Windows), any server on the port counts.
+async function taskStillRunning(share: Extract<Share, { kind: 'task' }>): Promise<boolean> {
+  try {
+    return await listensFrom(share.port, await realPath(share.dir));
+  } catch {
+    return canConnect('127.0.0.1', share.port);
+  }
+}
+
 // Picks up shares from the last session: after a reload, or VS Code closing without undoing them.
 async function restoreShares(saved: Share[]): Promise<void> {
   const kept: Share[] = [];
@@ -226,7 +236,8 @@ async function restoreShares(saved: Share[]): Promise<void> {
       }
     } else if (share.kind === 'task') {
       // VS Code reconnects tasks after a window reload, possibly after this runs, so the port is checked too.
-      if (findTask(share.port) || await canConnect('127.0.0.1', share.port)) kept.push(share);
+      // Something else may have taken it since, which isn't Mobile Serve's to close.
+      if (findTask(share.port) || await taskStillRunning(share)) kept.push(share);
     } else if (share.kind === 'static') {
       // Stopped with the last window's extension host.
     } else if (await liveServerOnNetwork(share.port)) {

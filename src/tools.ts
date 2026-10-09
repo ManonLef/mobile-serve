@@ -5,6 +5,8 @@ export interface Tool {
   inScript: RegExp;
   // Matches the running program's name, without directory or .js extension.
   inProcess: RegExp;
+  // Matches a script that starts the tool's dev server, rather than a build or a production server.
+  devScript: RegExp;
   // Make the tool listen on all interfaces.
   hostArgs: string[];
   // Make the tool listen on `port`, and fail rather than pick another one when it's taken.
@@ -13,9 +15,16 @@ export interface Tool {
   defaultPort: number;
 }
 
-// `names` is a regex alternation. In scripts it must be a whole word, so "vite" doesn't match "vite-app".
+// A name as a whole word in a script, so "vite" doesn't match "vite-app".
+const word = (names: string) => `(?<![\\w/.-])(?:${names})(?![\\w/.-])`;
+// What follows the name in a dev script: one of these subcommands, or (when `bare` is set) nothing
+// but options, for tools that start their dev server when given no subcommand.
+const dev = (names: string, subcommands: string, bare = false) =>
+  new RegExp(`${word(names)}(?:\\s+(?:${subcommands})(?![\\w-])${bare ? '|(?=\\s*$|\\s+-)' : ''})`);
+
+// `names` is a regex alternation.
 const tool = (names: string, rest: Omit<Tool, 'inScript' | 'inProcess'>, processNames = names): Tool => ({
-  inScript: new RegExp(`(?<![\\w/.-])(?:${names})(?![\\w/.-])`),
+  inScript: new RegExp(word(names)),
   inProcess: new RegExp(`^(?:${processNames})$`),
   ...rest,
 });
@@ -23,13 +32,23 @@ const tool = (names: string, rest: Omit<Tool, 'inScript' | 'inProcess'>, process
 const portFlag = (port: number) => ['--port', String(port)];
 
 export const TOOLS: Tool[] = [
-  tool('vite', { hostArgs: ['--host'], portArgs: port => [...portFlag(port), '--strictPort'], defaultPort: 5173 }),
-  tool('astro', { hostArgs: ['--host'], portArgs: portFlag, defaultPort: 4321 }),
-  tool('nuxt|nuxi', { hostArgs: ['--host'], portArgs: portFlag, defaultPort: 3000 }),
+  // Vite also takes the folder to serve, so anything but its other subcommands starts the dev server.
+  tool('vite', {
+    devScript: new RegExp(`${word('vite')}(?!\\s+(?:build|preview|optimize)(?![\\w-]))`),
+    hostArgs: ['--host'], portArgs: port => [...portFlag(port), '--strictPort'], defaultPort: 5173,
+  }),
+  tool('astro', { devScript: dev('astro', 'dev'), hostArgs: ['--host'], portArgs: portFlag, defaultPort: 4321 }),
+  tool('nuxt|nuxi', { devScript: dev('nuxt|nuxi', 'dev', true), hostArgs: ['--host'], portArgs: portFlag, defaultPort: 3000 }),
   // Next.js renames its server process to "next-server (vX.Y.Z)".
-  tool('next', { hostArgs: ['-H', '0.0.0.0'], portArgs: port => ['-p', String(port)], defaultPort: 3000 }, 'next|next-server'),
-  tool('ng', { hostArgs: ['--host', '0.0.0.0'], portArgs: portFlag, defaultPort: 4200 }),
-  tool('webpack|webpack-dev-server|vue-cli-service', { hostArgs: ['--host', '0.0.0.0'], portArgs: portFlag, defaultPort: 8080 }),
+  tool('next', {
+    devScript: dev('next', 'dev', true), hostArgs: ['-H', '0.0.0.0'], portArgs: port => ['-p', String(port)], defaultPort: 3000,
+  }, 'next|next-server'),
+  tool('ng', { devScript: dev('ng', 'serve|s'), hostArgs: ['--host', '0.0.0.0'], portArgs: portFlag, defaultPort: 4200 }),
+  // Plain `webpack` only builds; `webpack serve` starts webpack-dev-server.
+  tool('webpack|webpack-dev-server|vue-cli-service', {
+    devScript: new RegExp(`${dev('webpack', 'serve|server|s').source}|${dev('webpack-dev-server', 'serve', true).source}|${dev('vue-cli-service', 'serve').source}`),
+    hostArgs: ['--host', '0.0.0.0'], portArgs: portFlag, defaultPort: 8080,
+  }),
 ];
 
 // Script names end up in a shell command, so anything else is never offered. A leading "-" would be read as an option.
@@ -43,6 +62,12 @@ export const SETS_HOST = /(?<![\w-])(--host|--hostname|-H)(?![\w-])/;
 export function scriptTool(body: unknown): Tool | undefined {
   if (typeof body !== 'string' || COMPOUND_SCRIPT.test(body) || SETS_HOST.test(body)) return;
   return TOOLS.find(t => t.inScript.test(body));
+}
+
+// The tool whose dev server a script starts, when flags appended to it would reach that tool.
+export function devServerTool(body: unknown): Tool | undefined {
+  const tool = scriptTool(body);
+  return tool?.devScript.test(body as string) ? tool : undefined;
 }
 
 // The arguments that run `script` with `extra` passed on to it. npm needs "--" in between.
