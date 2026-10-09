@@ -5,6 +5,7 @@
   "version": "0.1.0",
   "publisher": "local",
   "license": "MIT",
+  "repository": { "type": "git", "url": "https://github.com/ManonLef/mobile-serve.git" },
   "categories": ["Other"],
   "keywords": ["mobile", "phone", "qr code", "lan", "dev server", "vite", "live server"],
   "engines": { "vscode": "^1.82.0" },
