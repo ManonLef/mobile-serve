@@ -12,6 +12,10 @@
   "main": "./dist/extension.js",
   "activationEvents": ["onStartupFinished"],
   "capabilities": {
+    "virtualWorkspaces": {
+      "supported": false,
+      "description": "Mobile Serve starts servers from the project's files on this computer, so it needs them on disk."
+    },
     "untrustedWorkspaces": {
       "supported": "limited",
       "description": "In Restricted Mode the extension won't start or restart dev servers, because that runs scripts from the project's package.json. Plain HTML folders can still be served."
@@ -19,8 +23,8 @@
   },
   "contributes": {
     "commands": [
-      { "command": "mobileServe.show", "title": "Mobile Serve: Show Phone URL" },
-      { "command": "mobileServe.stop", "title": "Mobile Serve: Stop Sharing on the Network" }
+      { "command": "mobileServe.show", "title": "Show Phone URL", "category": "Mobile Serve" },
+      { "command": "mobileServe.stop", "title": "Stop Sharing on the Network", "category": "Mobile Serve" }
     ],
     "taskDefinitions": [
       {

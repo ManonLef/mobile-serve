@@ -127,7 +127,7 @@ Needs Node.js 22.18 or newer. Run `npm install`, then:
 - `npm run install-dev` builds the extension and installs it into your everyday VS Code
   (`~/.vscode/extensions`): over the installed copy if there is one, or else as `mobile-serve-dev`.
   Run **Developer: Reload Window** afterwards.
-- `npx @vscode/vsce package` builds the `.vsix`.
+- `npx @vscode/vsce@4 package` builds the `.vsix`.
 
 The source in `src/` is TypeScript using ES modules. esbuild bundles it into a single CommonJS
 file, `dist/extension.js`, because that's the format VS Code loads extensions in. The small `package.json`
