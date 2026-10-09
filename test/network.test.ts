@@ -11,6 +11,9 @@ test('skips Hyper-V, WSL and VirtualBox adapters', () => {
   assert.deepStrictEqual(windows.map(a => a.name), ['Ethernet', 'Wi-Fi']);
   const linux = rankAddresses({ vboxnet0: ipv4('192.168.56.1'), wg0: ipv4('10.8.0.2'), wlp2s0: ipv4('192.168.1.20') });
   assert.deepStrictEqual(linux.map(a => a.name), ['wlp2s0']);
+  // Only skipped as loopback when it's called just that.
+  const loopback = rankAddresses({ lo: ipv4('192.168.9.9'), lo0: ipv4('192.168.9.8'), 'Local Area Connection': ipv4('192.168.1.20') });
+  assert.deepStrictEqual(loopback.map(a => a.name), ['Local Area Connection']);
 });
 
 test('puts the default route interface first, then private addresses', () => {
