@@ -125,16 +125,21 @@ export function realPath(dir: string): Promise<string> {
   return new Promise(resolve => fs.realpath.native(dir, (err, resolved) => resolve(err ? dir : resolved)));
 }
 
-// Groups listening sockets into one server per port, keeping only likely dev servers.
-// When several processes listen on a port, the server is the one the phone would reach.
-export function collectServers(processes: LsofProcess[], liveServerPort?: number): DetectedServer[] {
+/**
+ * Groups listening sockets into one server per port, keeping only likely dev servers.
+ * When several processes listen on a port, the server is the one the phone would reach.
+ * Live Server runs inside a VS Code extension host: this window's is `extensionHostPid`, which over
+ * Remote SSH, WSL or in a container is a plain node process, not one named after VS Code.
+ */
+export function collectServers(processes: LsofProcess[], liveServerPort?: number, extensionHostPid?: number): DetectedServer[] {
   const byPort = new Map<number, { pid: number; label: string; kind: DevServer['kind']; host: string }[]>();
   for (const { pid, command, names } of processes) {
     for (const name of names) {
       const address = parseListenAddress(name);
       if (!address || address.port < MIN_DEV_PORT) continue;
 
-      const kind = VS_CODE_PROCESS.test(command) && address.port === liveServerPort ? 'liveServer'
+      const inVsCode = pid === extensionHostPid || VS_CODE_PROCESS.test(command);
+      const kind = inVsCode && address.port === liveServerPort ? 'liveServer'
         : DOCKER_PROCESS.test(command) ? 'docker'
         : isDevProcess(command) ? 'process'
         : undefined;
@@ -164,10 +169,11 @@ export async function getWorkingDirs(pids: number[]): Promise<Map<number, string
 
 // `workspaceFolders` should already be real paths (see realPath).
 export async function findDevServers(
-  { liveServerPort, workspaceFolders = [] }: { liveServerPort?: number; workspaceFolders?: string[] } = {},
+  { liveServerPort, extensionHostPid, workspaceFolders = [] }:
+    { liveServerPort?: number; extensionHostPid?: number; workspaceFolders?: string[] } = {},
 ): Promise<DetectedServer[]> {
   const stdout = await lsof(['-iTCP', '-sTCP:LISTEN', '-nP', '-F', 'pcn']);
-  const servers = collectServers(parseLsof(stdout), liveServerPort);
+  const servers = collectServers(parseLsof(stdout), liveServerPort, extensionHostPid);
   const dirs = await getWorkingDirs([...new Set(servers.map(s => s.pid))]);
 
   return servers

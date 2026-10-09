@@ -156,3 +156,10 @@ test('collectServers records the one address a server is bound to', () => {
     { port: 3000, pid: 2, label: 'node', kind: 'process', lanReachable: true },
   ]);
 });
+
+test('collectServers finds Live Server in this window\'s extension host, even when it\'s named node', () => {
+  // Over Remote SSH the extension host is node; other node processes on the port stay dev servers.
+  const processes = [{ pid: 7, command: 'node', names: ['127.0.0.1:5500'] }, { pid: 8, command: 'node', names: ['127.0.0.1:3000'] }];
+  assert.deepStrictEqual(collectServers(processes, 5500, 7).map(s => [s.port, s.kind, s.label]), [[5500, 'liveServer', 'Live Server'], [3000, 'process', 'node']]);
+  assert.deepStrictEqual(collectServers(processes, 5500, 99).map(s => s.kind), ['process', 'process']);
+});

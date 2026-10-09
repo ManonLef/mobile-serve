@@ -30,6 +30,8 @@ async function findWorkspaceServers(): Promise<{ servers: DevServer[]; problem?:
   try {
     const servers = await findDevServers({
       liveServerPort,
+      // Live Server runs in this extension host, like Mobile Serve.
+      extensionHostPid: process.pid,
       // lsof reports real paths, so symlinked workspace folders have to be resolved to match.
       workspaceFolders: await Promise.all((vscode.workspace.workspaceFolders || []).map(folder => realPath(folder.uri.fsPath))),
     });
