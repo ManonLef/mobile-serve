@@ -1,9 +1,13 @@
 import { test } from 'node:test';
 import assert from 'node:assert';
+import { spawn } from 'node:child_process';
 import * as fs from 'node:fs/promises';
 import * as os from 'node:os';
 import * as path from 'node:path';
-import { buildNetworkCommand, detectPackageManager, parseScriptEnv, runningProgram, splitCommandLine, splitPsEnvironment } from '../src/restartCommand.ts';
+import {
+  buildNetworkCommand, detectPackageManager, parseScriptEnv, runningProgram, runningSameScript, splitCommandLine, splitPsEnvironment,
+} from '../src/restartCommand.ts';
+import { listProcesses } from '../src/servers.ts';
 
 const build = (script: string, body: unknown, program: string | undefined, packageManager = 'npm') =>
   buildNetworkCommand({ script, body, program, packageManager });
@@ -67,9 +71,9 @@ test('parseScriptEnv reads the script, package.json and package manager', () => 
   assert.deepStrictEqual(parseScriptEnv([
     'HOME=/Users/me', 'npm_lifecycle_event=start', 'npm_lifecycle_event=dev',
     'npm_package_json=/app/package.json', 'npm_config_user_agent=pnpm/9.1.0 npm/? node/v20.11.0 darwin arm64',
-  ]), { event: 'dev', packageJson: '/app/package.json', packageManager: 'pnpm' });
+  ]), { event: 'dev', packageJson: '/app/package.json', packageName: undefined, packageManager: 'pnpm' });
   assert.deepStrictEqual(parseScriptEnv(['npm_lifecycle_event=dev', 'npm_config_user_agent=cnpm/1.0']),
-    { event: 'dev', packageJson: undefined, packageManager: undefined });
+    { event: 'dev', packageJson: undefined, packageName: undefined, packageManager: undefined });
   assert.strictEqual(parseScriptEnv(['HOME=/Users/me', '']), undefined);
 });
 
@@ -96,5 +100,24 @@ test('detects the package manager from the monorepo root and the packageManager 
     assert.strictEqual(await detectPackageManager(app), 'yarn');
   } finally {
     await fs.rm(root, { recursive: true, force: true });
+  }
+});
+
+test('runningSameScript finds the processes of the server\'s own script, not the one that started it', async t => {
+  if (process.platform === 'win32') return t.skip('reads the environment with ps or /proc');
+  const env = (pkg: string) => ({ ...process.env, npm_lifecycle_event: 'dev', npm_package_json: `/repo/${pkg}/package.json` });
+  // root's dev script (concurrently, say) → web's dev script (sh) → the server, which prints the pids and waits.
+  const server = 'console.log([process.pid, process.ppid].join(" ")); setTimeout(() => {}, 10000)';
+  const sh = `require("child_process").spawn(process.execPath, ["-e", ${JSON.stringify(server)}], { stdio: "inherit" }); setTimeout(() => {}, 10000)`;
+  const root = `require("child_process").spawn(process.execPath, ["-e", ${JSON.stringify(sh)}], { stdio: "inherit", env: ${JSON.stringify(env('web'))} }); setTimeout(() => {}, 10000)`;
+  const child = spawn(process.execPath, ['-e', root], { env: env('root'), stdio: ['ignore', 'pipe', 'inherit'] });
+  let pids: number[] = [];
+  try {
+    pids = (await new Promise<string>(resolve => child.stdout.once('data', resolve))).toString().trim().split(' ').map(Number);
+    const [serverPid, shPid] = pids;
+    const same = await runningSameScript(serverPid, await listProcesses());
+    assert.deepStrictEqual([...same].sort(), [serverPid, shPid].sort());
+  } finally {
+    for (const pid of [...pids, child.pid!]) process.kill(pid);
   }
 });

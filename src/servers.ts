@@ -220,17 +220,23 @@ export function unrelatedListeners(listening: number[], jobPids: number[], proce
 
 /**
  * The processes to stop so the server on `pid` stays stopped, as Ctrl+C in its terminal would:
- * the server plus the ancestors in its process group (npm, a watcher like nodemon, `next dev`…),
- * up to but not including the shell it was started from, which is returned too when there is one.
- * Never climbs into VS Code, init, or `protectedPids`.
+ * the server plus the ancestors in its process group that run its script (`scriptPids`, see
+ * runningSameScript) and the package manager that ran it, up to but not including the shell it was
+ * started from, which is returned too when there is one. Never climbs into VS Code, init,
+ * `protectedPids`, or a tool running several scripts at once (concurrently, turbo…).
  */
-export function serverJob(pid: number, processes: Map<number, ProcessInfo>, protectedPids: Set<number>): { pids: number[]; shellPid?: number } {
+export function serverJob(
+  pid: number, processes: Map<number, ProcessInfo>, protectedPids: Set<number>, scriptPids: Set<number>,
+): { pids: number[]; shellPid?: number } {
   const pids = [pid];
   for (let current = processes.get(pid); current;) {
     const parent = processes.get(current.ppid);
     if (!parent || parent.pid <= 1 || protectedPids.has(parent.pid) || VS_CODE_PROCESS.test(parent.name)) break;
     // A shell with job control runs each command in its own process group.
     if (parent.pgid !== current.pgid) return { pids, shellPid: SHELL.test(parent.name) ? parent.pid : undefined };
+    // `current` is the package manager that ran the script, so `parent` started it as part of something
+    // bigger, which may be running other servers too. Stopping the script ends `current` anyway.
+    if (!scriptPids.has(current.pid)) break;
     pids.push(parent.pid);
     current = parent;
   }

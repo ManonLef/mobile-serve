@@ -4,6 +4,7 @@ import {
   findDevServers, listeningPids, listProcesses, ancestors, serverJob, unrelatedListeners, getWorkingDirs, pickRestartedServer,
   type DetectedServer,
 } from './servers.ts';
+import { runningSameScript } from './restartCommand.ts';
 
 const POLL_INTERVAL_MS = 500;
 const STOP_TIMEOUT_MS = 5000;
@@ -64,7 +65,7 @@ async function stopAndRun(
   // Stop what started the server too (npm, a watcher…), the processes Ctrl+C would stop, so nothing starts it again.
   // Each gets SIGTERM rather than Ctrl+C's SIGINT, which commands a script starts in the background ignore.
   const processes = await listProcesses();
-  const job = serverJob(server.pid, processes, ancestors(process.pid, processes));
+  const job = serverJob(server.pid, processes, ancestors(process.pid, processes), await runningSameScript(server.pid, processes));
   // Another process on the port (another project's server on [::1], say) would keep it busy, and isn't ours to stop.
   const others = unrelatedListeners(listening, job.pids, processes);
   if (others.length) {
