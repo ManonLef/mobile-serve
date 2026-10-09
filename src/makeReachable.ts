@@ -28,8 +28,13 @@ async function findServerTerminal(shellPid: number | undefined, dir: string): Pr
   if (!shellPid) return;
   for (const terminal of vscode.window.terminals) {
     if ((await terminal.processId) !== shellPid) continue;
-    const cwd = (await getWorkingDirs([shellPid])).get(shellPid);
-    return cwd === dir ? terminal : undefined;
+    try {
+      const cwd = (await getWorkingDirs([shellPid])).get(shellPid);
+      return cwd === dir ? terminal : undefined;
+    } catch {
+      // A new terminal works just as well.
+      return undefined;
+    }
   }
   return undefined;
 }
@@ -68,31 +73,42 @@ function restartOnNetwork(server: DetectedServer, restart: { command: string; di
       }
     }
 
-    // Not cancellable: once the server has been stopped, it's always started again.
-    const stopped = await waitFor(async () => (await listeningPids(server.port)).length === 0, STOP_TIMEOUT_MS);
-    if (!stopped) {
-      vscode.window.showErrorMessage(`Port ${server.port} is still in use. Something may have restarted the server; ` +
-        `stop it yourself and run “${restart.command}”.`);
+    // From here the server is stopped, so a failure must say how to start it again.
+    let sent = false;
+    try {
+      // Not cancellable: once the server has been stopped, it's always started again.
+      const stopped = await waitFor(async () => (await listeningPids(server.port)).length === 0, STOP_TIMEOUT_MS);
+      if (!stopped) {
+        vscode.window.showErrorMessage(`Port ${server.port} is still in use. Something may have restarted the server; ` +
+          `stop it yourself and run “${restart.command}”.`);
+        return;
+      }
+
+      // Servers already running (an API next to the front end, say) mustn't be mistaken for the restarted one.
+      const pidsBefore = new Set((await findDevServers()).map(s => s.pid));
+      const terminal = await findServerTerminal(job.shellPid, restart.dir)
+        ?? vscode.window.createTerminal({ name: TERMINAL_NAME, cwd: restart.dir });
+      terminal.show(true);
+      terminal.sendText(restart.command);
+      sent = true;
+
+      // Cancelling only stops waiting: the server keeps starting in its terminal.
+      const started = await waitFor(async () => pickRestartedServer(await findDevServers(),
+        { dir: restart.dir, oldPort: server.port, pidsBefore }), START_TIMEOUT_MS, token);
+      if (token.isCancellationRequested) return;
+      if (!started) {
+        vscode.window.showErrorMessage(`The dev server didn't become reachable within ${START_TIMEOUT_MS / 1000} seconds. ` +
+          `Check the “${terminal.name}” terminal.`);
+        return;
+      }
+      return started.port;
+    } catch (err) {
+      const reason = err instanceof Error ? err.message : String(err);
+      vscode.window.showErrorMessage(sent
+        ? `The dev server is starting again, but checking on it failed: ${reason}`
+        : `The server was stopped, but starting it again failed: ${reason}. Start it with “${restart.command}”.`);
       return;
     }
-
-    // Servers already running (an API next to the front end, say) mustn't be mistaken for the restarted one.
-    const pidsBefore = new Set((await findDevServers()).map(s => s.pid));
-    const terminal = await findServerTerminal(job.shellPid, restart.dir)
-      ?? vscode.window.createTerminal({ name: TERMINAL_NAME, cwd: restart.dir });
-    terminal.show(true);
-    terminal.sendText(restart.command);
-
-    // Cancelling only stops waiting: the server keeps starting in its terminal.
-    const started = await waitFor(async () => pickRestartedServer(await findDevServers(),
-      { dir: restart.dir, oldPort: server.port, pidsBefore }), START_TIMEOUT_MS, token);
-    if (token.isCancellationRequested) return;
-    if (!started) {
-      vscode.window.showErrorMessage(`The dev server didn't become reachable within ${START_TIMEOUT_MS / 1000} seconds. ` +
-        `Check the “${terminal.name}” terminal.`);
-      return;
-    }
-    return started.port;
   });
 }
 

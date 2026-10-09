@@ -35,13 +35,17 @@ export function rankAddresses(
   return addresses.sort((a, b) => rank(a) - rank(b) || a.name.localeCompare(b.name));
 }
 
-// The interface the default route goes through, when it can be found.
+// The interface the default route goes through, when it can be found. Only used for ranking, so failures don't matter.
 async function defaultRouteInterface(): Promise<string | undefined> {
-  if (process.platform === 'darwin') {
-    return /interface:\s*(\S+)/.exec((await execQuiet('route', ['-n', 'get', 'default'])) ?? '')?.[1];
-  }
-  if (process.platform === 'linux') {
-    return /\bdev\s+(\S+)/.exec((await execQuiet('ip', ['route', 'show', 'default'])) ?? '')?.[1];
+  try {
+    if (process.platform === 'darwin') {
+      return /interface:\s*(\S+)/.exec((await execQuiet('route', ['-n', 'get', 'default'])) ?? '')?.[1];
+    }
+    if (process.platform === 'linux') {
+      return /\bdev\s+(\S+)/.exec((await execQuiet('ip', ['route', 'show', 'default'])) ?? '')?.[1];
+    }
+  } catch {
+    // Fall back to ranking by address alone.
   }
   return undefined;
 }
