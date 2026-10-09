@@ -23,8 +23,8 @@ const MIN_DEV_PORT = 1024;
 const SHELL = /^-?(sh|bash|zsh|fish|dash|ksh|tcsh|csh|nu|pwsh)$/;
 
 export const LSOF_MISSING = process.platform === 'linux'
-  ? 'lsof isn\'t installed, so running servers can\'t be detected. Install it (for example `sudo apt install lsof`) or enter a port.'
-  : 'lsof isn\'t available, so running servers can\'t be detected. Enter a port instead.';
+  ? 'lsof isn\'t installed, so running servers can\'t be detected. Install it, for example with `sudo apt install lsof`.'
+  : 'lsof isn\'t available, so running servers can\'t be detected.';
 
 export interface DevServer {
   port: number;

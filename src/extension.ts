@@ -22,9 +22,10 @@ type Target = { start: StartOption } | { server: DevServer };
 // The port the panel offers to stop sharing, if it does.
 let panelSharedPort: number | undefined;
 
-// Servers running from the open project, or a message saying why there are none.
+// Servers running from the open project, or a message saying why there are none. The message is
+// shown with "Enter a port", which still works.
 async function findWorkspaceServers(): Promise<{ servers: DevServer[]; problem?: string }> {
-  if (!CAN_DETECT_SERVERS) return { servers: [], problem: 'Detecting servers isn\'t supported on Windows — enter a port' };
+  if (!CAN_DETECT_SERVERS) return { servers: [], problem: 'Detecting servers isn\'t supported on Windows' };
   // 0 means Live Server picks a random port, which can't be told apart from VS Code's other ports.
   const liveServerPort = vscode.workspace.getConfiguration('liveServer.settings').get<number>('port') ?? DEFAULT_LIVE_SERVER_PORT;
   try {
@@ -38,11 +39,11 @@ async function findWorkspaceServers(): Promise<{ servers: DevServer[]; problem?:
     // Servers Mobile Serve started are offered through their folder instead.
     const started = new Set(currentShares().filter(s => s.kind === 'task' || s.kind === 'static').map(s => s.port));
     const inProject = servers.filter(s => s.inProject && !started.has(s.port));
-    return { servers: inProject, problem: inProject.length ? undefined : 'No servers running in this project — enter a port' };
+    return { servers: inProject, problem: inProject.length ? undefined : 'No servers running in this project' };
   } catch (err) {
     // Starting the project or entering a port still works, so the list stays open.
     const message = err instanceof Error ? err.message : String(err);
-    return { servers: [], problem: message === LSOF_MISSING ? message : `Couldn't look for running servers (${message}) — enter a port` };
+    return { servers: [], problem: message === LSOF_MISSING ? message : `Couldn't look for running servers (${message})` };
   }
 }
 
@@ -61,7 +62,7 @@ function startItem(option: StartOption): ServerItem {
   };
 }
 
-function serverItems(starts: StartOption[], servers: DevServer[]): ServerItem[] {
+function serverItems(starts: StartOption[], servers: DevServer[], problem?: string): ServerItem[] {
   const separator = (label: string): ServerItem => ({ label, kind: vscode.QuickPickItemKind.Separator });
   const toItem = (server: DevServer): ServerItem => ({
     label: `$(radio-tower) ${server.port}`,
@@ -72,7 +73,7 @@ function serverItems(starts: StartOption[], servers: DevServer[]): ServerItem[] 
 
   const items = starts.map(startItem);
   if (servers.length) items.push(separator('Running in this project'), ...servers.map(toItem));
-  items.push(separator(''), { label: '$(edit) Enter a port…', manual: true });
+  items.push(separator(''), { label: '$(edit) Enter a port…', detail: problem, manual: true });
   return items;
 }
 
@@ -95,8 +96,10 @@ async function chooseItem(): Promise<ServerItem | undefined> {
 
   const filled = findWorkspaceServers().then(({ servers, problem }) => {
     if (!open) return;
-    quickPick.items = serverItems(starts, servers);
-    quickPick.placeholder = starts.length ? 'Start this project for your phone, or pick a running server' : problem ?? 'Running servers';
+    quickPick.items = serverItems(starts, servers, problem);
+    quickPick.placeholder = starts.length ? 'Start this project for your phone, or pick a running server'
+      : servers.length ? 'Pick a running server, or enter a port'
+      : 'Enter the port of a running server';
     quickPick.busy = false;
   });
   try {
