@@ -189,10 +189,13 @@ export async function detectPackageManager(dir: string): Promise<string> {
 }
 
 /**
- * The command that runs the server's own package.json script again with the tool's host flag,
- * and the folder to run it in. Undefined unless the server was started by a script.
+ * The command that runs the server's own package.json script again with the tool's host flag, the
+ * command that runs it without (to go back to localhost), and the folder to run them in.
+ * Undefined unless the server was started by a script.
  */
-export async function findNetworkCommand(server: DetectedServer): Promise<{ command: string; dir: string } | undefined> {
+export async function findNetworkCommand(
+  server: DetectedServer,
+): Promise<{ command: string; localCommand: string; dir: string } | undefined> {
   if (!server.cwd || !server.inProject) return;
   const env = parseScriptEnv(await readEnvironment(server.pid));
   if (!env) return;
@@ -208,11 +211,13 @@ export async function findNetworkCommand(server: DetectedServer): Promise<{ comm
   }
   if (!scripts || typeof scripts !== 'object' || !Object.hasOwn(scripts, env.event)) return;
 
+  const packageManager = env.packageManager ?? await detectPackageManager(dir);
   const command = buildNetworkCommand({
     script: env.event,
     body: (scripts as Record<string, unknown>)[env.event],
     program: runningProgram(await readArguments(server.pid, server.cwd)),
-    packageManager: env.packageManager ?? await detectPackageManager(dir),
+    packageManager,
   });
-  return command ? { command, dir } : undefined;
+  // buildNetworkCommand has checked the script name is safe in a shell command.
+  return command ? { command, localCommand: `${packageManager} run ${env.event}`, dir } : undefined;
 }

@@ -3,6 +3,7 @@ import * as vscode from 'vscode';
 import { isDetected, type DevServer } from './servers.ts';
 import { findNetworkCommand } from './restartCommand.ts';
 import { restartOnNetwork } from './restart.ts';
+import { addShare } from './sharing.ts';
 
 const SHOW_ANYWAY = 'Show Anyway';
 
@@ -25,7 +26,11 @@ async function fixLiveServer(server: DevServer, intro: string): Promise<number |
     },
     fix, SHOW_ANYWAY);
   if (answer === fix) {
-    await vscode.workspace.getConfiguration('liveServer.settings').update('host', '0.0.0.0', vscode.ConfigurationTarget.Workspace);
+    const config = vscode.workspace.getConfiguration('liveServer.settings');
+    const previousHost = config.inspect('host')?.workspaceValue;
+    await config.update('host', '0.0.0.0', vscode.ConfigurationTarget.Workspace);
+    // Remembered so "Close Mobile" can put it back, unless it already was 0.0.0.0 by the user's choice.
+    if (previousHost !== '0.0.0.0') addShare({ kind: 'liveServer', port: server.port, previousHost });
     vscode.window.showInformationMessage('Live Server host set to 0.0.0.0. Stop and restart Go Live, then try again.');
     return;
   }
@@ -53,7 +58,12 @@ export async function makeReachable(server: DevServer): Promise<number | undefin
       `${intro} Restart it with “${restart.command}” to make it reachable.`,
       { modal: true, detail: 'Restarting stops the current server, as Ctrl+C in its terminal would, and starts it again with that command.' },
       restartServer, SHOW_ANYWAY);
-    if (answer === restartServer) return (await restartOnNetwork(detected, restart))?.port;
+    if (answer === restartServer) {
+      // Remembered so "Close Mobile" can restart it for this computer only.
+      const started = await restartOnNetwork(detected, { command: restart.command, dir: restart.dir }, ({ port, pid }) =>
+        addShare({ kind: 'restarted', port, pid, dir: restart.dir, localCommand: restart.localCommand }));
+      return started?.port;
+    }
     return answer === SHOW_ANYWAY ? server.port : undefined;
   }
 

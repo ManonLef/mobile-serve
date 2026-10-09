@@ -14,6 +14,8 @@ real touch, real screen size, real Safari or Chrome.
 2. Click **📱 Mobile** in the status bar, or run **Mobile Serve: Show Phone URL** from the Command Palette.
 3. Pick the server from the list. Servers started from the open project are listed first.
 4. Scan the QR code with your phone. Your phone has to be on the same Wi-Fi network as your computer.
+5. When you're done, click **📱 Close Mobile** in the status bar. It shows up when Mobile Serve has
+   made a server reachable from your network (see below), and puts it back to this computer only.
 
 The panel also shows whether the server is listening on that address (checked from your computer,
 so a firewall can still block the phone), and lists other addresses to try
@@ -71,7 +73,12 @@ an API or backend sometimes need a small change:
 ## Security
 
 Making a server reachable from your phone makes it reachable from every device on that network.
-Avoid doing this on public or untrusted Wi-Fi, and stop the server when you're done.
+Avoid doing this on public or untrusted Wi-Fi, and stop sharing when you're done: dev servers aren't
+built to face a network, and Live Server serves every file in the folder, `.env` and `.git` included.
+
+**Close Mobile** undoes what Mobile Serve changed: it restarts a server it restarted with the original
+script, and puts Live Server's host setting back (stopping Live Server if it's running). A server
+that was already reachable before Mobile Serve touched it is left alone; stop it yourself.
 
 In Restricted Mode (untrusted workspaces) the extension won't restart servers for you, because
 that runs scripts from the project's `package.json`.

@@ -7,7 +7,10 @@ import {
 
 const POLL_INTERVAL_MS = 500;
 const STOP_TIMEOUT_MS = 5000;
+// How long the progress notification waits for the restarted server.
 const START_TIMEOUT_MS = 30000;
+// How long to keep looking for it after that, so a slow or cancelled start is still noticed.
+const START_WATCH_MS = 5 * 60000;
 const TERMINAL_NAME = 'Dev server (phone)';
 
 // A command and the folder to run it in.
@@ -16,13 +19,15 @@ export interface Run {
   dir: string;
 }
 
+const sleep = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
+
 // Calls `check` until it returns something truthy, or resolves to undefined after `timeoutMs` or on cancellation.
 async function waitFor<T>(check: () => Promise<T>, timeoutMs: number, token?: vscode.CancellationToken): Promise<T | undefined> {
   const end = Date.now() + timeoutMs;
   while (Date.now() < end && !token?.isCancellationRequested) {
     const result = await check();
     if (result) return result;
-    await new Promise(resolve => setTimeout(resolve, POLL_INTERVAL_MS));
+    await sleep(POLL_INTERVAL_MS);
   }
   return undefined;
 }
@@ -99,8 +104,14 @@ async function stopAndRun(
   }
 }
 
-// Restarts the server with `run.command`, which makes it listen on the network. Resolves to the restarted server.
-export function restartOnNetwork(server: DetectedServer, run: Run): Thenable<DetectedServer | undefined> {
+/**
+ * Restarts the server with `run.command`, which makes it listen on the network. Resolves to the
+ * restarted server once it's reachable. `onStarted` is called with it too, even when it only
+ * comes up after the progress notification gave up or was cancelled, since it's on the network all the same.
+ */
+export function restartOnNetwork(
+  server: DetectedServer, run: Run, onStarted: (started: DetectedServer) => void,
+): Thenable<DetectedServer | undefined> {
   return vscode.window.withProgress({
     location: vscode.ProgressLocation.Notification,
     title: `Restarting the dev server with “${run.command}”…`,
@@ -112,12 +123,19 @@ export function restartOnNetwork(server: DetectedServer, run: Run): Thenable<Det
     const terminal = await stopAndRun(server, run, token);
     if (!terminal) return;
 
+    const watch = waitFor(async () => pickRestartedServer(await findDevServers(),
+      { dir: run.dir, oldPort: server.port, pidsBefore }), START_WATCH_MS);
+    watch.then(started => started && onStarted(started), () => {
+      // Reported below while the notification waits; later failures only end the watch.
+    });
+
+    // Cancelling only stops waiting: the server keeps starting in its terminal.
+    const cancelled = new Promise<'gave up'>(resolve => token.onCancellationRequested(() => resolve('gave up')));
+    const timedOut = sleep(START_TIMEOUT_MS).then(() => 'gave up' as const);
     try {
-      // Cancelling only stops waiting: the server keeps starting in its terminal.
-      const started = await waitFor(async () => pickRestartedServer(await findDevServers(),
-        { dir: run.dir, oldPort: server.port, pidsBefore }), START_TIMEOUT_MS, token);
-      if (token.isCancellationRequested) return;
-      if (!started) {
+      const started = await Promise.race([watch, cancelled, timedOut]);
+      if (started === 'gave up' && token.isCancellationRequested) return;
+      if (!started || started === 'gave up') {
         vscode.window.showErrorMessage(`The dev server didn't become reachable within ${START_TIMEOUT_MS / 1000} seconds. ` +
           `Check the “${terminal.name}” terminal.`);
         return;
@@ -129,4 +147,12 @@ export function restartOnNetwork(server: DetectedServer, run: Run): Thenable<Det
       return;
     }
   });
+}
+
+// Restarts the server with `run.command`, which makes it listen on localhost only. Resolves to whether it did.
+export function restartLocally(server: { pid: number; port: number }, run: Run): Thenable<boolean> {
+  return vscode.window.withProgress({
+    location: vscode.ProgressLocation.Notification,
+    title: `Restarting the dev server with “${run.command}”, for this computer only…`,
+  }, async () => !!(await stopAndRun(server, run)));
 }
