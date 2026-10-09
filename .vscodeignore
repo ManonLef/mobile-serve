@@ -5,6 +5,7 @@ scripts/**
 dist/meta.json
 node_modules/**
 .vscode/**
+.github/**
 tsconfig.json
 *.vsix
 .gitignore
