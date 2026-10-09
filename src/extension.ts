@@ -5,6 +5,8 @@ import { getLanAddresses, probe } from './network.ts';
 import { makeReachable } from './makeReachable.ts';
 import { showPanel, disposePanel } from './panel.ts';
 import { registerSharing, onDidChangeShares, currentShares, closeAll, undoOnShutdown } from './sharing.ts';
+import { findStartOptions, startOption, type StartOption } from './start.ts';
+import { describePlan } from './projectStart.ts';
 import type { PageUrl } from './page.ts';
 
 const COMMAND = 'mobileServe.show';
@@ -13,12 +15,14 @@ const DEFAULT_LIVE_SERVER_PORT = 5500;
 // Server detection relies on lsof, which Windows doesn't have.
 const CAN_DETECT_SERVERS = process.platform !== 'win32';
 
-type ServerItem = vscode.QuickPickItem & { server?: DevServer; manual?: boolean };
+type ServerItem = vscode.QuickPickItem & { server?: DevServer; start?: StartOption; manual?: boolean };
+// What to show on the phone: a folder to start, or a server that's running.
+type Target = { start: StartOption } | { server: DevServer };
 
 // The port the panel offers to stop sharing, if it does.
 let panelSharedPort: number | undefined;
 
-// Running servers, or a message saying why they couldn't be looked for.
+// Servers running from the open project, or a message saying why there are none.
 async function findWorkspaceServers(): Promise<{ servers: DevServer[]; problem?: string }> {
   if (!CAN_DETECT_SERVERS) return { servers: [], problem: 'Detecting servers isn\'t supported on Windows — enter a port' };
   // 0 means Live Server picks a random port, which can't be told apart from VS Code's other ports.
@@ -29,16 +33,33 @@ async function findWorkspaceServers(): Promise<{ servers: DevServer[]; problem?:
       // lsof reports real paths, so symlinked workspace folders have to be resolved to match.
       workspaceFolders: await Promise.all((vscode.workspace.workspaceFolders || []).map(folder => realPath(folder.uri.fsPath))),
     });
-    return { servers, problem: servers.length ? undefined : 'No dev servers detected — enter a port' };
+    // Servers Mobile Serve started are offered through their folder instead.
+    const started = new Set(currentShares().filter(s => s.kind === 'task' || s.kind === 'static').map(s => s.port));
+    const inProject = servers.filter(s => s.inProject && !started.has(s.port));
+    return { servers: inProject, problem: inProject.length ? undefined : 'No servers running in this project — enter a port' };
   } catch (err) {
-    if (err instanceof Error && err.message === LSOF_MISSING) return { servers: [], problem: LSOF_MISSING };
-    throw err;
+    // Starting the project or entering a port still works, so the list stays open.
+    const message = err instanceof Error ? err.message : String(err);
+    return { servers: [], problem: message === LSOF_MISSING ? message : `Couldn't look for running servers (${message}) — enter a port` };
   }
 }
 
-function serverItems(servers: DevServer[]): ServerItem[] {
-  const inProject = servers.filter(s => s.inProject);
-  const elsewhere = servers.filter(s => !s.inProject);
+function startItem(option: StartOption): ServerItem {
+  const { folder, plan, sharedPort } = option;
+  if (sharedPort !== undefined) {
+    return { label: `$(device-mobile) ${folder.name}`, description: `Shared on port ${sharedPort}`, detail: 'Show the QR code again', start: option };
+  }
+  return {
+    label: `$(play) Start ${folder.name} for your phone`,
+    description: describePlan(plan),
+    detail: plan.kind === 'static'
+      ? 'Reloads your phone when you save, like Go Live'
+      : 'Runs in a terminal, reachable from your network',
+    start: option,
+  };
+}
+
+function serverItems(starts: StartOption[], servers: DevServer[]): ServerItem[] {
   const separator = (label: string): ServerItem => ({ label, kind: vscode.QuickPickItemKind.Separator });
   const toItem = (server: DevServer): ServerItem => ({
     label: `$(radio-tower) ${server.port}`,
@@ -47,20 +68,21 @@ function serverItems(servers: DevServer[]): ServerItem[] {
     server,
   });
 
-  const items: ServerItem[] = [];
-  if (inProject.length) items.push(separator('This project'), ...inProject.map(toItem));
-  if (elsewhere.length) items.push(separator(inProject.length ? 'Other servers' : 'Running servers'), ...elsewhere.map(toItem));
+  const items = starts.map(startItem);
+  if (servers.length) items.push(separator('Running in this project'), ...servers.map(toItem));
   items.push(separator(''), { label: '$(edit) Enter a port…', manual: true });
   return items;
 }
 
 // Shows the list straight away and fills it in once lsof has answered.
 async function chooseItem(): Promise<ServerItem | undefined> {
+  // Only reads package.json and index.html, so it's quick enough to wait for.
+  const starts = await findStartOptions();
   const quickPick = vscode.window.createQuickPick<ServerItem>();
-  quickPick.title = 'Which dev server do you want on your phone?';
+  quickPick.title = 'What do you want on your phone?';
   quickPick.placeholder = 'Looking for running servers…';
   quickPick.busy = true;
-  quickPick.items = serverItems([]);
+  quickPick.items = serverItems(starts, []);
 
   let open = true;
   const choice = new Promise<ServerItem | undefined>(resolve => {
@@ -71,12 +93,12 @@ async function chooseItem(): Promise<ServerItem | undefined> {
 
   const filled = findWorkspaceServers().then(({ servers, problem }) => {
     if (!open) return;
-    quickPick.items = serverItems(servers);
-    quickPick.placeholder = problem ?? 'Running servers';
+    quickPick.items = serverItems(starts, servers);
+    quickPick.placeholder = starts.length ? 'Start this project for your phone, or pick a running server' : problem ?? 'Running servers';
     quickPick.busy = false;
   });
   try {
-    // A failed scan rejects `filled`, which ends the command with an error.
+    // findWorkspaceServers reports its own failures, so `filled` only rejects on a bug, which ends the command with an error.
     return await Promise.race([choice, filled.then(() => choice)]);
   } finally {
     open = false;
@@ -84,10 +106,11 @@ async function chooseItem(): Promise<ServerItem | undefined> {
   }
 }
 
-async function pickServer(): Promise<DevServer | undefined> {
+async function pickTarget(): Promise<Target | undefined> {
   const choice = await chooseItem();
   if (!choice) return;
-  if (!choice.manual) return choice.server;
+  if (choice.start) return { start: choice.start };
+  if (!choice.manual) return choice.server && { server: choice.server };
 
   const value = await vscode.window.showInputBox({
     prompt: 'Port number',
@@ -97,7 +120,7 @@ async function pickServer(): Promise<DevServer | undefined> {
     },
   });
   // Nothing is known about a port typed in by hand, so lanReachable stays undefined.
-  return value ? { port: Number(value), label: 'Manual', kind: 'manual' } : undefined;
+  return value ? { server: { port: Number(value), label: 'Manual', kind: 'manual' } } : undefined;
 }
 
 async function show(): Promise<void> {
@@ -107,9 +130,11 @@ async function show(): Promise<void> {
     return;
   }
 
-  const server = await pickServer();
-  if (!server) return;
-  const port = server.lanReachable === false ? await makeReachable(server) : server.port;
+  const target = await pickTarget();
+  if (!target) return;
+  const port = 'start' in target ? await startOption(target.start, addresses[0].address)
+    : target.server.lanReachable === false ? await makeReachable(target.server)
+    : target.server.port;
   if (!port) return;
 
   const { listening, https } = await probe(addresses[0].address, port);

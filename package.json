@@ -1,8 +1,8 @@
 {
   "name": "mobile-serve",
   "displayName": "Mobile Serve",
-  "description": "Open your local dev server on your real phone: pick a running server, scan a QR code, done.",
-  "version": "0.0.3",
+  "description": "Open your project on your real phone, like Go Live: start it or pick a running server, scan a QR code, done.",
+  "version": "0.1.0",
   "publisher": "local",
   "license": "MIT",
   "categories": ["Other"],
@@ -13,13 +13,22 @@
   "capabilities": {
     "untrustedWorkspaces": {
       "supported": "limited",
-      "description": "In Restricted Mode the extension won't restart dev servers, because that runs scripts from the project's package.json."
+      "description": "In Restricted Mode the extension won't start or restart dev servers, because that runs scripts from the project's package.json. Plain HTML folders can still be served."
     }
   },
   "contributes": {
     "commands": [
       { "command": "mobileServe.show", "title": "Mobile Serve: Show Phone URL" },
       { "command": "mobileServe.stop", "title": "Mobile Serve: Stop Sharing on the Network" }
+    ],
+    "taskDefinitions": [
+      {
+        "type": "mobileServe",
+        "required": ["port"],
+        "properties": {
+          "port": { "type": "number", "description": "The port the dev server is started on for the phone." }
+        }
+      }
     ],
     "menus": {
       "commandPalette": [
@@ -31,6 +40,7 @@
     "bundle": "esbuild src/extension.ts --bundle --platform=node --format=cjs --target=node18 --external:vscode --main-fields=module,main --metafile=dist/meta.json --outfile=dist/extension.js",
     "notices": "node scripts/notices.ts",
     "check-bundle": "node scripts/checkBundle.ts",
+    "install-dev": "npm run build && node scripts/installDev.ts",
     "build": "npm run bundle && npm run notices && npm run check-bundle",
     "build:debug": "npm run bundle -- --sourcemap && npm run notices && npm run check-bundle",
     "watch": "npm run bundle -- --sourcemap --watch",
