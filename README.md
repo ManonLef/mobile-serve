@@ -93,4 +93,6 @@ Needs Node.js 22.18 or newer. Run `npm install`, then:
 - `npx @vscode/vsce package` builds the `.vsix`.
 
 The source in `src/` is TypeScript using ES modules. esbuild bundles it into a single CommonJS
-file, `dist/extension.js`, because that's the format VS Code loads extensions in.
+file, `dist/extension.js`, because that's the format VS Code loads extensions in. The small `package.json`
+files in `src/`, `test/` and `scripts/` only set `"type": "module"`, so Node runs those folders as ES
+modules while the root package, and with it `dist/extension.js`, stays CommonJS.
