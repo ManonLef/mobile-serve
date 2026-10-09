@@ -4,7 +4,7 @@ import * as fs from 'node:fs';
 import * as http from 'node:http';
 import { isIP, type AddressInfo } from 'node:net';
 import * as path from 'node:path';
-import { isInside } from './servers.ts';
+import { isInside } from './paths.ts';
 
 // Reserved for the reload connection. Can't clash with a file, since the folder is served as it is.
 const RELOAD_PATH = '/__mobile-serve/reload';

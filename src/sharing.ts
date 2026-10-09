@@ -2,7 +2,8 @@
 import * as path from 'node:path';
 import * as vscode from 'vscode';
 import { canConnect, getLanAddresses } from './network.ts';
-import { listeningPids, listensFrom, realPath } from './servers.ts';
+import { realPath } from './paths.ts';
+import { listeningPids, listensFrom } from './servers.ts';
 import { restartLocally } from './restart.ts';
 import { restoreSettingInFile } from './settingsFile.ts';
 

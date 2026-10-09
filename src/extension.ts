@@ -1,7 +1,8 @@
 import * as vscode from 'vscode';
 import { toDataURL } from 'qrcode';
 import { SHOW_COMMAND, STOP_COMMAND } from './commands.ts';
-import { findDevServers, realPath, LSOF_MISSING, type DevServer } from './servers.ts';
+import { realPath } from './paths.ts';
+import { findDevServers, LSOF_MISSING, type DevServer } from './servers.ts';
 import { getLanAddresses, probe } from './network.ts';
 import { makeReachable } from './makeReachable.ts';
 import { showPanel, disposePanel } from './panel.ts';

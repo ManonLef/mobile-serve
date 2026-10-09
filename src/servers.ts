@@ -1,7 +1,6 @@
 // Finds dev servers listening on this machine, using lsof (macOS and Linux only).
-import * as fs from 'node:fs';
-import * as path from 'node:path';
 import { execOutput, type ExecResult } from './exec.ts';
+import { isInside } from './paths.ts';
 
 // Process names that are likely to be a dev server. Compared after dropping a trailing
 // version number, so python3.12 and php8.2 match too.
@@ -109,17 +108,6 @@ export function isDevProcess(command: string): boolean {
   const name = command.toLowerCase().replace(/[\d.]+$/, '');
   // Next.js renames its process to "next-server (vX.Y.Z)".
   return DEV_PROCESS_NAMES.has(name) || name.startsWith('next-server');
-}
-
-export function isInside(dir: string | undefined, parent: string): boolean {
-  if (!dir) return false;
-  const prefix = parent.endsWith(path.sep) ? parent : parent + path.sep;
-  return dir === parent || dir.startsWith(prefix);
-}
-
-// Resolves symlinks (and on macOS the letter case), so paths compare equal to the ones lsof reports.
-export function realPath(dir: string): Promise<string> {
-  return new Promise(resolve => fs.realpath.native(dir, (err, resolved) => resolve(err ? dir : resolved)));
 }
 
 /**

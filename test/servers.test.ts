@@ -5,7 +5,7 @@ import * as fs from 'node:fs/promises';
 import * as os from 'node:os';
 import * as path from 'node:path';
 import {
-  listensFrom, lsofOutput, parseLsof, parseListenAddress, isDevProcess, isInside, isLanHost, collectServers, pickRestartedServer,
+  listensFrom, lsofOutput, parseLsof, parseListenAddress, isDevProcess, isLanHost, collectServers, pickRestartedServer,
   type DetectedServer,
 } from '../src/servers.ts';
 
@@ -38,13 +38,6 @@ test('isDevProcess matches whole names, not prefixes', () => {
   for (const name of ['Google', 'GoogleSoftwareUpdateDaemon', 'goland', 'javaw', 'nodemon-ui', 'Spotify']) {
     assert.ok(!isDevProcess(name), name);
   }
-});
-
-test('isInside compares whole path segments, including under the root', () => {
-  assert.ok(isInside('/work/app/src', '/work/app'));
-  assert.ok(isInside('/work/app', '/work/app'));
-  assert.ok(!isInside('/work/app-2', '/work/app'));
-  assert.ok(isInside('/Users/x', '/'));
 });
 
 test('collectServers keeps dev servers, Live Server and Docker, and works out reachability', () => {

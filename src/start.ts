@@ -4,7 +4,7 @@ import * as path from 'node:path';
 import * as vscode from 'vscode';
 import { canConnect } from './network.ts';
 import { planStart, portFor, scriptArgs, type StartPlan } from './projectStart.ts';
-import { realPath } from './servers.ts';
+import { realPath } from './paths.ts';
 import { singleFlight } from './singleFlight.ts';
 import { startStaticServer } from './staticServer.ts';
 import { waitForStart } from './wait.ts';
