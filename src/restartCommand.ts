@@ -4,38 +4,8 @@ import * as fs from 'node:fs/promises';
 import * as path from 'node:path';
 import { execQuiet } from './exec.ts';
 import { isInside, type DetectedServer } from './servers.ts';
+import { TOOLS, SAFE_SCRIPT_NAME, scriptTool, runScriptArgs } from './tools.ts';
 
-interface HostFlag {
-  // Matches the tool's name inside a package.json script.
-  inScript: RegExp;
-  // Matches the running program's name, without directory or .js extension.
-  inProcess: RegExp;
-  // Makes the tool listen on all interfaces.
-  flag: string;
-}
-
-// `names` is a regex alternation. In scripts it must be a whole word, so "vite" doesn't match "vite-app".
-const tool = (names: string, flag: string, processNames = names): HostFlag => ({
-  inScript: new RegExp(`(?<![\\w/.-])(?:${names})(?![\\w/.-])`),
-  inProcess: new RegExp(`^(?:${processNames})$`),
-  flag,
-});
-
-const HOST_FLAGS: HostFlag[] = [
-  tool('vite', '--host'),
-  tool('astro', '--host'),
-  tool('nuxt|nuxi', '--host'),
-  // Next.js renames its server process to "next-server (vX.Y.Z)".
-  tool('next', '-H 0.0.0.0', 'next|next-server'),
-  tool('ng', '--host 0.0.0.0'),
-  tool('webpack|webpack-dev-server|vue-cli-service', '--host 0.0.0.0'),
-];
-// Script names end up in a shell command, so anything else is never offered. A leading "-" would be read as an option.
-const SAFE_SCRIPT_NAME = /^\w[\w:.-]*$/;
-// The flag is appended to the script, so it only reaches the tool when the tool is the script's
-// only command. Scripts that chain commands, run several at once, or already set a host are skipped.
-const COMPOUND_SCRIPT = /[;&|`$<>\n]|(?<![\w-])(concurrently|run-p|run-s|npm-run-all2?|nodemon|turbo|nx|lerna)(?![\w-])/;
-const SETS_HOST = /(?<![\w-])(--host|--hostname|-H)(?![\w-])/;
 // Runtimes that run a tool's script file; the tool is the first argument after their options.
 const RUNTIMES = new Set(['node', 'nodejs', 'bun', 'deno']);
 const PACKAGE_MANAGERS = ['npm', 'pnpm', 'yarn', 'bun'];
@@ -152,13 +122,9 @@ export function buildNetworkCommand({ script, body, program, packageManager }: {
 }): string | undefined {
   // Only restart when the script runs the same tool as the server that's running. Otherwise a
   // Laravel or Express server would get replaced by the project's Vite asset server.
-  const runningTool = program && HOST_FLAGS.find(h => h.inProcess.test(program));
-  if (!runningTool || !SAFE_SCRIPT_NAME.test(script) || typeof body !== 'string') return;
-  if (!runningTool.inScript.test(body) || COMPOUND_SCRIPT.test(body) || SETS_HOST.test(body)) return;
-
-  return packageManager === 'npm'
-    ? `npm run ${script} -- ${runningTool.flag}`
-    : `${packageManager} run ${script} ${runningTool.flag}`;
+  const runningTool = program && TOOLS.find(t => t.inProcess.test(program));
+  if (!runningTool || !SAFE_SCRIPT_NAME.test(script) || scriptTool(body) !== runningTool) return;
+  return [packageManager, ...runScriptArgs(packageManager, script, runningTool.hostArgs)].join(' ');
 }
 
 async function readPackageManagerField(dir: string): Promise<string | undefined> {
