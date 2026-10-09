@@ -1,6 +1,8 @@
 # Everything the extension needs is bundled into dist/extension.js.
 src/**
 test/**
+out/**
+.vscode-test/**
 scripts/**
 dist/meta.json
 node_modules/**
