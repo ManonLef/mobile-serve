@@ -80,6 +80,23 @@ export function isAllowedHost(host: string | undefined): boolean {
   return !!hostname && (hostname.toLowerCase() === 'localhost' || isIP(hostname) !== 0);
 }
 
+/**
+ * The part of a file a Range header asks for. iOS Safari only plays video and audio from a server
+ * that answers these. Undefined when the whole file should be sent: no Range header, or one this
+ * server doesn't handle, such as several ranges at once.
+ */
+export function parseRange(header: string | undefined, size: number): { start: number; end: number } | 'unsatisfiable' | undefined {
+  const match = /^bytes=(\d*)-(\d*)$/.exec(header?.trim() ?? '');
+  if (!match || (!match[1] && !match[2])) return undefined;
+  const [, from, to] = match;
+  // An end before the start makes the header invalid, so it's ignored.
+  if (from && to && Number(to) < Number(from)) return undefined;
+  // "bytes=-500" asks for the last 500 bytes.
+  const start = from ? Number(from) : Math.max(0, size - Number(to));
+  const end = from && to ? Math.min(Number(to), size - 1) : size - 1;
+  return start < size && start <= end ? { start, end } : 'unsatisfiable';
+}
+
 function send(res: http.ServerResponse, status: number, text: string, headers: http.OutgoingHttpHeaders = {}): void {
   res.writeHead(status, { 'Content-Type': 'text/plain; charset=utf-8', ...headers });
   res.end(text);
@@ -136,9 +153,16 @@ export function startStaticServer(root: string, port: number): Promise<StaticSer
       res.end(req.method === 'HEAD' ? undefined : html);
       return;
     }
-    res.writeHead(200, { ...headers, 'Content-Length': stat.size });
+    const range = parseRange(req.headers.range, stat.size);
+    if (range === 'unsatisfiable') return send(res, 416, 'Range not satisfiable', { 'Content-Range': `bytes */${stat.size}` });
+    res.writeHead(range ? 206 : 200, {
+      ...headers,
+      'Accept-Ranges': 'bytes',
+      'Content-Length': range ? range.end - range.start + 1 : stat.size,
+      ...(range && { 'Content-Range': `bytes ${range.start}-${range.end}/${stat.size}` }),
+    });
     if (req.method === 'HEAD') return void res.end();
-    fs.createReadStream(file).on('error', () => res.destroy()).pipe(res);
+    fs.createReadStream(file, range).on('error', () => res.destroy()).pipe(res);
   };
 
   const server = http.createServer((req, res) => {

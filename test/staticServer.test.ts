@@ -4,7 +4,7 @@ import * as fs from 'node:fs/promises';
 import * as http from 'node:http';
 import * as os from 'node:os';
 import * as path from 'node:path';
-import { injectReloadScript, isAllowedHost, resolveRequestPath, startStaticServer, type StaticServer } from '../src/staticServer.ts';
+import { injectReloadScript, isAllowedHost, parseRange, resolveRequestPath, startStaticServer, type StaticServer } from '../src/staticServer.ts';
 
 test('injectReloadScript goes before </body>, or at the end without one', () => {
   const page = injectReloadScript('<html><body><p>Hi</p></BODY></html>');
@@ -29,6 +29,20 @@ test('isAllowedHost accepts IP addresses and localhost, not other names', () => 
   }
   for (const host of [undefined, '', 'evil.example', 'evil.example:5600', 'my-mac.local:5600', 'evil.example@127.0.0.1', '127.0.0.1/x', '[evil.example]']) {
     assert.strictEqual(isAllowedHost(host), false, String(host));
+  }
+});
+
+test('parseRange reads one byte range, and ignores what it can\'t handle', () => {
+  assert.deepStrictEqual(parseRange('bytes=0-1', 10), { start: 0, end: 1 });
+  assert.deepStrictEqual(parseRange('bytes=4-', 10), { start: 4, end: 9 });
+  assert.deepStrictEqual(parseRange('bytes=-3', 10), { start: 7, end: 9 });
+  // Safari asks past the end to learn the size.
+  assert.deepStrictEqual(parseRange('bytes=8-100', 10), { start: 8, end: 9 });
+  assert.deepStrictEqual(parseRange('bytes=-100', 10), { start: 0, end: 9 });
+  for (const header of ['bytes=10-', 'bytes=-0']) assert.strictEqual(parseRange(header, 10), 'unsatisfiable', header);
+  assert.strictEqual(parseRange('bytes=0-', 0), 'unsatisfiable');
+  for (const header of [undefined, '', 'bytes=-', 'bytes=5-3', 'bytes=0-1,4-5', 'items=0-1']) {
+    assert.strictEqual(parseRange(header, 10), undefined, String(header));
   }
 });
 
@@ -76,6 +90,13 @@ test('serves the folder, adding live reload to HTML pages', async () => {
     const blog = await get(server, '/blog?x=1');
     assert.deepStrictEqual([blog.status, blog.headers.location], [301, '/blog/?x=1']);
     assert.match((await get(server, '/blog/')).body, /<h1>Blog<\/h1>/);
+
+    // How iOS Safari loads a video.
+    assert.strictEqual(css.headers['accept-ranges'], 'bytes');
+    const part = await get(server, '/style.css', { Range: 'bytes=5-9' });
+    assert.deepStrictEqual([part.status, part.body, part.headers['content-range']], [206, 'color', 'bytes 5-9/17']);
+    const past = await get(server, '/style.css', { Range: 'bytes=17-' });
+    assert.deepStrictEqual([past.status, past.headers['content-range']], [416, 'bytes */17']);
   } finally {
     await server.close();
     await cleanup();
