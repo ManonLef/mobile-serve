@@ -30,10 +30,11 @@ export interface DevServer {
   port: number;
   // Missing for a port typed in by hand.
   pid?: number;
-  // Process name, "Live Server" or "Docker".
+  // Process name, "Live Server", "Docker" or "Manual".
   label: string;
-  // Served by the Live Server extension inside VS Code.
-  liveServer: boolean;
+  // A dev server process, the Live Server extension inside VS Code, a port Docker publishes,
+  // or a port typed in by hand.
+  kind: 'process' | 'liveServer' | 'docker' | 'manual';
   // Listens on an address the phone can use. Unknown for a port typed in by hand.
   lanReachable?: boolean;
   // Working directory of the server process.
@@ -113,26 +114,28 @@ export function realPath(dir: string): Promise<string> {
 // Groups listening sockets into one server per port, keeping only likely dev servers.
 // When several processes listen on a port, the server is the one the phone would reach.
 export function collectServers(processes: LsofProcess[], liveServerPort?: number): DetectedServer[] {
-  const byPort = new Map<number, { pid: number; label: string; liveServer: boolean; host: string }[]>();
+  const byPort = new Map<number, { pid: number; label: string; kind: DevServer['kind']; host: string }[]>();
   for (const { pid, command, names } of processes) {
     for (const name of names) {
       const address = parseListenAddress(name);
       if (!address || address.port < MIN_DEV_PORT) continue;
 
-      const liveServer = VS_CODE_PROCESS.test(command) && address.port === liveServerPort;
-      const docker = DOCKER_PROCESS.test(command);
-      if (!liveServer && !docker && !isDevProcess(command)) continue;
+      const kind = VS_CODE_PROCESS.test(command) && address.port === liveServerPort ? 'liveServer'
+        : DOCKER_PROCESS.test(command) ? 'docker'
+        : isDevProcess(command) ? 'process'
+        : undefined;
+      if (!kind) continue;
 
-      const label = liveServer ? 'Live Server' : docker ? 'Docker' : command;
+      const label = kind === 'liveServer' ? 'Live Server' : kind === 'docker' ? 'Docker' : command;
       const listeners = byPort.get(address.port) ?? [];
-      listeners.push({ pid, label, liveServer, host: address.host });
+      listeners.push({ pid, label, kind, host: address.host });
       byPort.set(address.port, listeners);
     }
   }
   return [...byPort].map(([port, listeners]) => {
     const reachable = listeners.find(l => isLanHost(l.host));
-    const { pid, label, liveServer } = reachable ?? listeners[0];
-    return { port, pid, label, liveServer, lanReachable: !!reachable };
+    const { pid, label, kind } = reachable ?? listeners[0];
+    return { port, pid, label, kind, lanReachable: !!reachable };
   });
 }
 
@@ -155,10 +158,10 @@ export async function findDevServers(
     .map(server => ({ ...server, cwd: dirs.get(server.pid) }))
     // Apps opened from the Dock or Finder (pgAdmin, Spotify…) run from "/"; dev servers never do.
     // Docker Desktop does too, but forwards the ports of containers, which often are dev servers.
-    .filter(server => server.liveServer || server.label === 'Docker' || server.cwd !== '/')
+    .filter(server => server.kind !== 'process' || server.cwd !== '/')
     .map(server => ({
       ...server,
-      inProject: server.liveServer || workspaceFolders.some(folder => isInside(server.cwd, folder)),
+      inProject: server.kind === 'liveServer' || workspaceFolders.some(folder => isInside(server.cwd, folder)),
     }))
     .sort((a, b) => a.port - b.port);
 }

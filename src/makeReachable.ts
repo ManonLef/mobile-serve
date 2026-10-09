@@ -113,18 +113,17 @@ function restartOnNetwork(server: DetectedServer, restart: { command: string; di
 }
 
 async function fixLiveServer(server: DevServer, intro: string): Promise<number | undefined> {
+  const message = `${intro} Live Server needs its host setting changed to 0.0.0.0.`;
   // Only ever change it for a workspace: a global 0.0.0.0 would expose every Live Server session, on every network.
   if (!vscode.workspace.workspaceFolders) {
-    const answer = await vscode.window.showWarningMessage(
-      `${intro} Live Server needs its host setting changed to 0.0.0.0.`,
+    const answer = await vscode.window.showWarningMessage(message,
       { modal: true, detail: 'Open the folder you\'re serving and try again, so the setting can be changed for that workspace only.' },
       SHOW_ANYWAY);
     return answer === SHOW_ANYWAY ? server.port : undefined;
   }
 
   const fix = 'Fix Live Server Setting';
-  const answer = await vscode.window.showWarningMessage(
-    `${intro} Live Server needs its host setting changed to 0.0.0.0.`,
+  const answer = await vscode.window.showWarningMessage(message,
     { modal: true, detail: 'This makes Live Server reachable from any device on your network for this workspace.' },
     fix, SHOW_ANYWAY);
   if (answer === fix) {
@@ -138,8 +137,8 @@ async function fixLiveServer(server: DevServer, intro: string): Promise<number |
 // Explains why the server can't be reached and offers to fix it. Resolves to the port to show, or undefined to stop.
 export async function makeReachable(server: DevServer): Promise<number | undefined> {
   const intro = 'This server only listens on localhost, so your phone can\'t reach it.';
-  if (server.liveServer) return fixLiveServer(server, intro);
-  if (server.label === 'Docker') {
+  if (server.kind === 'liveServer') return fixLiveServer(server, intro);
+  if (server.kind === 'docker') {
     const answer = await vscode.window.showWarningMessage(
       `${intro} The container's port is published on 127.0.0.1 only. Publish it on all interfaces ` +
       '(for example “-p 3000:3000” instead of “-p 127.0.0.1:3000:3000”) and restart the container.',

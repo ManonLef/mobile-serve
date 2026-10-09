@@ -92,7 +92,7 @@ async function pickServer(): Promise<DevServer | undefined> {
     },
   });
   // Nothing is known about a port typed in by hand, so lanReachable stays undefined.
-  return value ? { port: Number(value), label: 'Manual', liveServer: false } : undefined;
+  return value ? { port: Number(value), label: 'Manual', kind: 'manual' } : undefined;
 }
 
 async function show(): Promise<void> {
