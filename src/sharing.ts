@@ -96,7 +96,7 @@ function liveServerHostLocation(): { file: string; jsonPath: string[] } | undefi
 }
 
 // Forgets restarted servers that have stopped, or been restarted by hand.
-async function dropStoppedServers(): Promise<void> {
+export async function dropStoppedServers(): Promise<void> {
   const stopped: Share[] = [];
   for (const share of shares) {
     if (share.kind !== 'restarted') continue;

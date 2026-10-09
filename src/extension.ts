@@ -4,7 +4,7 @@ import { findDevServers, realPath, LSOF_MISSING, type DevServer } from './server
 import { getLanAddresses, probe } from './network.ts';
 import { makeReachable } from './makeReachable.ts';
 import { showPanel, disposePanel } from './panel.ts';
-import { registerSharing, onDidChangeShares, currentShares, closeAll, undoOnShutdown } from './sharing.ts';
+import { registerSharing, onDidChangeShares, currentShares, closeAll, dropStoppedServers, undoOnShutdown } from './sharing.ts';
 import { findStartOptions, startOption, type StartOption } from './start.ts';
 import { describePlan } from './projectStart.ts';
 import type { PageUrl } from './page.ts';
@@ -146,6 +146,8 @@ async function show(): Promise<void> {
   const scheme = https ? 'https' : 'http';
   const [first, ...rest] = usable.map((a): PageUrl => ({ name: a.name, url: `${scheme}://${a.address}:${port}` }));
   const qr = await toDataURL(first.url, { margin: 1, width: 320 });
+  // A server restarted by hand since isn't Mobile Serve's to stop, which the regular check may not have noticed yet.
+  await dropStoppedServers();
   const ours = currentShares().some(s => s.port === port);
   showPanel({
     urls: [first, ...rest], qr, listening, remoteName: vscode.env.remoteName,
@@ -168,7 +170,8 @@ function updateStatusBar(item: vscode.StatusBarItem): void {
   }
   const list = ports.join(', ');
   item.text = `$(device-mobile) Close Mobile: ${list}`;
-  item.tooltip = `Port ${list} is reachable from every device on your network. Click to stop sharing it.\n\n` +
+  const [noun, verb, pronoun] = ports.length > 1 ? ['Ports', 'are', 'them'] : ['Port', 'is', 'it'];
+  item.tooltip = `${noun} ${list} ${verb} reachable from every device on your network. Click to stop sharing ${pronoun}.\n\n` +
     'To show the QR code again, run “Mobile Serve: Show Phone URL”.';
   item.command = STOP_COMMAND;
   item.backgroundColor = new vscode.ThemeColor('statusBarItem.warningBackground');
