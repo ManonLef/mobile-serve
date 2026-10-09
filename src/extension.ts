@@ -1,5 +1,6 @@
 import * as vscode from 'vscode';
 import { toDataURL } from 'qrcode';
+import { SHOW_COMMAND, STOP_COMMAND } from './commands.ts';
 import { findDevServers, realPath, LSOF_MISSING, type DevServer } from './servers.ts';
 import { getLanAddresses, probe } from './network.ts';
 import { makeReachable } from './makeReachable.ts';
@@ -9,8 +10,6 @@ import { findStartOptions, startOption, type StartOption } from './start.ts';
 import { describePlan } from './projectStart.ts';
 import type { PageUrl } from './page.ts';
 
-const COMMAND = 'mobileServe.show';
-const STOP_COMMAND = 'mobileServe.stop';
 const DEFAULT_LIVE_SERVER_PORT = 5500;
 // Server detection relies on lsof, which Windows doesn't have.
 const CAN_DETECT_SERVERS = process.platform !== 'win32';
@@ -167,7 +166,7 @@ function updateStatusBar(item: vscode.StatusBarItem): void {
   if (!ports.length) {
     item.text = '$(device-mobile) Mobile';
     item.tooltip = 'Show a QR code to open a local dev server on your phone';
-    item.command = COMMAND;
+    item.command = SHOW_COMMAND;
     item.backgroundColor = undefined;
     return;
   }
@@ -208,7 +207,7 @@ export function activate(context: vscode.ExtensionContext): void {
         disposePanel();
       }
     }),
-    vscode.commands.registerCommand(COMMAND, reportingErrors(show)),
+    vscode.commands.registerCommand(SHOW_COMMAND, reportingErrors(show)),
     vscode.commands.registerCommand(STOP_COMMAND, reportingErrors(async () => {
       if (!currentShares().length) {
         vscode.window.showInformationMessage('Mobile Serve isn\'t sharing anything on your network.');

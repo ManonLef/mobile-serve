@@ -1,10 +1,8 @@
 // The single Mobile Serve webview panel, reused across runs of the command.
 import * as crypto from 'node:crypto';
 import * as vscode from 'vscode';
+import { STOP_COMMAND } from './commands.ts';
 import { renderPage, type Page } from './page.ts';
-
-// Runs when the page's Stop Sharing button is clicked.
-const STOP_COMMAND = 'mobileServe.stop';
 
 let panel: vscode.WebviewPanel | undefined;
 // The URL the Copy button copies. Kept here rather than trusting what the webview sends.
@@ -19,6 +17,7 @@ export function showPanel(page: Page): void {
       { viewColumn: vscode.ViewColumn.Beside, preserveFocus: true },
       { enableScripts: true, localResourceRoots: [] });
     const messages = created.webview.onDidReceiveMessage(async message => {
+      // The page's Stop Sharing button.
       if (message?.type === 'stop') {
         await vscode.commands.executeCommand(STOP_COMMAND);
         return;
