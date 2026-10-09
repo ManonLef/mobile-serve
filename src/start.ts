@@ -5,6 +5,7 @@ import * as vscode from 'vscode';
 import { canConnect } from './network.ts';
 import { planStart, portFor, scriptArgs, type StartPlan } from './projectStart.ts';
 import { realPath } from './servers.ts';
+import { singleFlight } from './singleFlight.ts';
 import { startStaticServer } from './staticServer.ts';
 import { waitForStart } from './wait.ts';
 import { TASK_TYPE, addStaticShare, addTaskShare, currentShares, isLocalUri, isOurTask } from './sharing.ts';
@@ -97,11 +98,17 @@ async function startScript(
   }
 }
 
+// A folder being started, per folder: starting it again meanwhile would pick the same free port twice.
+const startOnce = singleFlight<string, number | undefined>();
+
 // Starts the folder for the phone (or finds it already started). Resolves to the port, or undefined if it didn't start.
 export async function startOption(option: StartOption, host: string): Promise<number | undefined> {
-  if (option.sharedPort !== undefined) return option.sharedPort;
-  const port = await portFor(option.plan);
-  return option.plan.kind === 'static'
-    ? startStatic(option.folder, option.plan.dir, port)
-    : startScript(option.folder, option.plan, port, host);
+  // Joins a start that's still waiting for the server, rather than showing a URL that doesn't work yet.
+  return startOnce(option.plan.dir, async () => {
+    if (option.sharedPort !== undefined) return option.sharedPort;
+    const port = await portFor(option.plan);
+    return option.plan.kind === 'static'
+      ? startStatic(option.folder, option.plan.dir, port)
+      : startScript(option.folder, option.plan, port, host);
+  });
 }
