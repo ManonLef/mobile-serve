@@ -1,7 +1,7 @@
 // Helps when the chosen server only listens on localhost, so a phone can't reach it.
 import * as vscode from 'vscode';
 import {
-  findDevServers, listeningPids, listProcesses, ancestors, serverJob, getWorkingDirs, pickRestartedServer, isDetected,
+  findDevServers, listeningPids, listProcesses, ancestors, serverJob, unrelatedListeners, getWorkingDirs, pickRestartedServer, isDetected,
   type DevServer, type DetectedServer,
 } from './servers.ts';
 import { findNetworkCommand } from './restartCommand.ts';
@@ -42,13 +42,21 @@ function restartOnNetwork(server: DetectedServer, restart: { command: string; di
     cancellable: true,
   }, async (_progress, token) => {
     // Check the pid still owns the port, so a pid reused by another process is never killed.
-    if (!(await listeningPids(server.port)).includes(server.pid)) {
+    const listening = await listeningPids(server.port);
+    if (!listening.includes(server.pid)) {
       vscode.window.showErrorMessage(`The server on port ${server.port} has already stopped. Start it with “${restart.command}”.`);
       return;
     }
     // Stop what started the server too (npm, a watcher…), as Ctrl+C would, so nothing starts it again.
     const processes = await listProcesses();
     const job = serverJob(server.pid, processes, ancestors(process.pid, processes));
+    // Another process on the port (another project's server on [::1], say) would keep it busy, and isn't ours to stop.
+    const others = unrelatedListeners(listening, job.pids, processes);
+    if (others.length) {
+      vscode.window.showErrorMessage(`Port ${server.port} is also used by another process (pid ${others.join(', ')}). ` +
+        `Stop the server yourself and run “${restart.command}”.`);
+      return;
+    }
     // Last point where cancelling leaves everything as it was.
     if (token.isCancellationRequested) return;
     // Outermost first, so a watcher can't restart the server in between.

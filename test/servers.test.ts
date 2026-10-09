@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert';
 import {
-  parseLsof, parseListenAddress, isDevProcess, isInside, isLanHost, collectServers, pickRestartedServer, parsePs, serverJob,
+  parseLsof, parseListenAddress, isDevProcess, isInside, isLanHost, collectServers, pickRestartedServer, parsePs, serverJob, unrelatedListeners,
   type DetectedServer,
 } from '../src/servers.ts';
 
@@ -62,10 +62,18 @@ test('collectServers keeps dev servers, Live Server and Docker, and works out re
 
 test('collectServers merges IPv4 and IPv6 listeners on one port, keeping the first pid', () => {
   const servers = collectServers([
-    { pid: 1, command: 'node', names: ['127.0.0.1:3000'] },
-    { pid: 2, command: 'node', names: ['[::]:3000'] },
+    { pid: 1, command: 'node', names: ['127.0.0.1:3000', '[::]:3000'] },
+    { pid: 2, command: 'node', names: ['[::1]:3000'] },
   ]);
   assert.deepStrictEqual(servers, [{ port: 3000, pid: 1, label: 'node', liveServer: false, lanReachable: true }]);
+});
+
+test('collectServers describes the process the phone would reach when several share a port', () => {
+  const servers = collectServers([
+    { pid: 1, command: 'node', names: ['[::1]:5173'] },
+    { pid: 2, command: 'python3', names: ['*:5173'] },
+  ]);
+  assert.deepStrictEqual(servers, [{ port: 5173, pid: 2, label: 'python3', liveServer: false, lanReachable: true }]);
 });
 
 test('pickRestartedServer ignores servers that were already running', () => {
@@ -94,4 +102,15 @@ test('serverJob stops the job up to the terminal shell, never VS Code', () => {
   // A server started by an extension shares VS Code's process group: only the server itself is stopped.
   assert.deepStrictEqual(serverJob(400, processes, new Set()), { pids: [400] });
   assert.deepStrictEqual(serverJob(302, processes, new Set([301])), { pids: [302] });
+});
+
+test('unrelatedListeners allows the server\'s job and its workers, nothing else', () => {
+  const processes = parsePs([
+    '  300   200   300 npm run dev',
+    '  302   300   300 node',
+    '  303   302   300 node',
+    '  500   400   500 node',
+  ].join('\n'));
+  assert.deepStrictEqual(unrelatedListeners([302, 303], [302, 300], processes), []);
+  assert.deepStrictEqual(unrelatedListeners([302, 500, 999], [302, 300], processes), [500, 999]);
 });

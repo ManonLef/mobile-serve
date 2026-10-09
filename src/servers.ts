@@ -111,8 +111,9 @@ export function realPath(dir: string): Promise<string> {
 }
 
 // Groups listening sockets into one server per port, keeping only likely dev servers.
+// When several processes listen on a port, the server is the one the phone would reach.
 export function collectServers(processes: LsofProcess[], liveServerPort?: number): DetectedServer[] {
-  const byPort = new Map<number, DetectedServer & { hosts: string[] }>();
+  const byPort = new Map<number, { pid: number; label: string; liveServer: boolean; host: string }[]>();
   for (const { pid, command, names } of processes) {
     for (const name of names) {
       const address = parseListenAddress(name);
@@ -122,19 +123,17 @@ export function collectServers(processes: LsofProcess[], liveServerPort?: number
       const docker = DOCKER_PROCESS.test(command);
       if (!liveServer && !docker && !isDevProcess(command)) continue;
 
-      let server = byPort.get(address.port);
-      if (!server) {
-        const label = liveServer ? 'Live Server' : docker ? 'Docker' : command;
-        server = { port: address.port, pid, label, liveServer, hosts: [] };
-        byPort.set(address.port, server);
-      }
-      server.hosts.push(address.host);
+      const label = liveServer ? 'Live Server' : docker ? 'Docker' : command;
+      const listeners = byPort.get(address.port) ?? [];
+      listeners.push({ pid, label, liveServer, host: address.host });
+      byPort.set(address.port, listeners);
     }
   }
-  return [...byPort.values()].map(({ hosts, ...server }) => ({
-    ...server,
-    lanReachable: hosts.some(isLanHost),
-  }));
+  return [...byPort].map(([port, listeners]) => {
+    const reachable = listeners.find(l => isLanHost(l.host));
+    const { pid, label, liveServer } = reachable ?? listeners[0];
+    return { port, pid, label, liveServer, lanReachable: !!reachable };
+  });
 }
 
 // Working directory per pid, so servers started from the open project can be told apart.
@@ -208,6 +207,12 @@ export function ancestors(pid: number, processes: Map<number, ProcessInfo>): Set
   const found = new Set<number>();
   for (let p = processes.get(pid); p && !found.has(p.pid); p = processes.get(p.ppid)) found.add(p.pid);
   return found;
+}
+
+// Listening pids that are neither in the server's job nor started by it (its workers).
+export function unrelatedListeners(listening: number[], jobPids: number[], processes: Map<number, ProcessInfo>): number[] {
+  const job = new Set(jobPids);
+  return listening.filter(pid => ![...ancestors(pid, processes)].some(p => job.has(p)));
 }
 
 /**
