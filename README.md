@@ -1,12 +1,14 @@
 # Mobile Serve
 
 A small extension that gives you a QR code and URL to use on your mobile phone to test your project
-in real time, without having to look up your computer's IP address or dev server port.
+in real time, without having to look up your computer's IP address or dev server port. The URL works
+on any other device on the same network too: a tablet, another computer, a colleague's phone.
 
 This extension does *not* show a simulated phone inside VS Code. Like Live Server's **Go Live**, it
 starts your project on your computer (or uses the dev server you already have running), works out the
-address your phone can reach it on over Wi-Fi, and shows that address as a QR code. Scan the code with your phone's camera and the page opens in your phone's own browser:
-real touch, real screen size, real Safari or Chrome.
+address your phone can reach it on over Wi-Fi, and shows that address as a QR code. Scan the code
+with your phone's camera and the page opens in your phone's own browser: real touch, real screen
+size, real Safari or Chrome.
 
 ## Instructions
 
