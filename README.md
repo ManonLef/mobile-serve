@@ -29,7 +29,11 @@ Mobile Serve looks at each open workspace folder and starts it the way that suit
   `package.json`'s `dev` script (or `start`, or `serve`) in a terminal, with the flags that make the
   tool listen on your network, for example `npm run dev -- --host --port 5173 --strictPort`. It uses
   the tool's usual port when it's free, so the address on your phone stays the same between runs.
-  Close Mobile, Ctrl+C or closing the terminal stops it.
+  Close Mobile, Ctrl+C or closing the terminal stops it. The script has to start the tool's dev
+  server (`vite`, `next dev`, `ng serve`, `webpack serve`…): scripts that build or run a production
+  server (`next start`, `vite preview`) aren't offered.
+  Tested with Vite and Angular CLI so far. The others should work the same way, but haven't been
+  tried yet; please open an issue if one doesn't.
 - **Plain HTML, CSS and JavaScript:** a folder with an `index.html` and no build step is served by
   Mobile Serve itself, on port 5600. Like Go Live, it reloads the page on your phone when you save,
   and swaps the stylesheets in place when only CSS changed. A `package.json` whose only server is a
