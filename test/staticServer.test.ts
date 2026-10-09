@@ -159,3 +159,14 @@ test('tells open pages to reload, or only to swap the CSS when only CSS changed'
     await cleanup();
   }
 });
+
+test('fails to start on a port that is taken', async () => {
+  const { root, cleanup } = await site();
+  const server = await startStaticServer(root, 0);
+  try {
+    await assert.rejects(startStaticServer(root, server.port), { code: 'EADDRINUSE' });
+  } finally {
+    await server.close();
+    await cleanup();
+  }
+});

@@ -173,9 +173,10 @@ export function startStaticServer(root: string, port: number): Promise<StaticSer
   });
 
   return new Promise((resolve, reject) => {
-    server.once('error', reject);
+    // Fails the start when the port is taken. Kept afterwards, when rejecting does nothing: an error
+    // there (too many open files, say) would otherwise be thrown in the extension host.
+    server.on('error', reject);
     server.listen(port, () => {
-      server.off('error', reject);
       resolve({
         // The port asked for, or the one picked when that was 0.
         port: (server.address() as AddressInfo).port,
