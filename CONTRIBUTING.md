@@ -25,6 +25,9 @@ plain Node. The modules that do import it (`sharing.ts`, `start.ts`, `restart.ts
 gather what those need to know, then show the dialogs, run the tasks and stop the processes. New
 logic goes in the first kind, with a test.
 
+The text Mobile Serve shows (the picker, the status bar, notifications and the QR code page) is in
+`strings.ts`, so new wording goes there too. Log messages stay where they're logged.
+
 The source in `src/` is TypeScript using ES modules. esbuild bundles it into a single CommonJS
 file, `dist/extension.js`, because that's the format VS Code loads extensions in. The small `package.json`
 files in `src/`, `test/` and `scripts/` only set `"type": "module"`, so Node runs those folders as ES

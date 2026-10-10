@@ -3,6 +3,7 @@ import * as crypto from 'node:crypto';
 import * as vscode from 'vscode';
 import { STOP_COMMAND } from './commands.ts';
 import { renderPage, type Page } from './page.ts';
+import { strings } from './strings.ts';
 
 let panel: vscode.WebviewPanel | undefined;
 // The URL the Copy button copies. Kept here rather than trusting what the webview sends.
@@ -23,7 +24,7 @@ export function showPanel(page: Page): void {
       }
       if (message?.type !== 'copy' || !currentUrl) return;
       await vscode.env.clipboard.writeText(currentUrl);
-      vscode.window.setStatusBarMessage(`Copied ${currentUrl}`, 3000);
+      vscode.window.setStatusBarMessage(strings.statusBar.copied(currentUrl), 3000);
     });
     created.onDidDispose(() => {
       messages.dispose();

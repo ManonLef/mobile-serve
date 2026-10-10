@@ -7,6 +7,7 @@ import * as path from 'node:path';
 import { canConnect } from './network.ts';
 import { detectPackageManager, readPackageJson, runScriptArgs } from './packageManager.ts';
 import { SAFE_SCRIPT_NAME, devServerTool, type Tool } from './tools.ts';
+import { strings } from './strings.ts';
 
 // Tried in this order. "start" is often a production server, so a dev script wins.
 const SCRIPT_NAMES = ['dev', 'start', 'serve'];
@@ -66,7 +67,7 @@ export function scriptArgs(plan: Extract<StartPlan, { kind: 'script' }>, port: n
 
 // What the phone's server runs, for showing to the user.
 export function describePlan(plan: StartPlan): string {
-  return plan.kind === 'static' ? 'Serves the folder\'s HTML, CSS and JavaScript' : `${plan.packageManager} run ${plan.script}`;
+  return plan.kind === 'static' ? strings.picker.staticPlan : `${plan.packageManager} run ${plan.script}`;
 }
 
 // Whether nothing listens on `port`, on localhost or on the network.
@@ -100,5 +101,5 @@ export async function portFor(plan: StartPlan): Promise<number> {
   if (plan.kind === 'static') return choosePort(STATIC_PORT);
   if (plan.fixedPort === undefined) return choosePort(plan.tool.defaultPort);
   if (await isPortFree(plan.fixedPort)) return plan.fixedPort;
-  throw new Error(`Port ${plan.fixedPort}, which the “${plan.script}” script uses, is already taken. Stop what's using it and try again.`);
+  throw new Error(strings.start.portTaken(plan.fixedPort, plan.script));
 }

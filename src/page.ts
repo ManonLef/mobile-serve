@@ -1,4 +1,5 @@
 // HTML for the Mobile Serve webview.
+import { strings } from './strings.ts';
 
 export interface PageUrl {
   // Network interface, e.g. en0.
@@ -30,21 +31,19 @@ export function renderPage({ urls, qr, listening, remoteName, sharedBy }: Page, 
   // A connection from this computer doesn't go through the firewall or the Wi-Fi network,
   // so it can't confirm the phone will get through.
   const status = listening
-    ? '<p class="ok">✓ The server is listening on this address.</p>'
-    : '<p class="warn">⚠ Couldn\'t connect on this address. Is the server running and bound to 0.0.0.0?</p>';
+    ? `<p class="ok">${strings.page.listening}</p>`
+    : `<p class="warn">${strings.page.notListening}</p>`;
   const https = primary.url.startsWith('https:')
-    ? '<p class="hint">The server uses HTTPS. If its certificate is self-signed, your phone will ask you to accept it.</p>'
+    ? `<p class="hint">${strings.page.https}</p>`
     : '';
   const remoteWarning = remoteName
-    ? `<p class="warn">⚠ VS Code is connected to a remote environment (${escapeHtml(remoteName)}). ` +
-      'These addresses belong to that machine, which your phone may not be able to reach.</p>'
+    ? `<p class="warn">${strings.page.remote(escapeHtml(remoteName))}</p>`
     : '';
   const sharing = sharedBy === 'mobileServe'
-    ? '<p class="warn">⚠ Every device on this network can open this server while it\'s shared.</p>' +
-      '<button id="stop" class="secondary">Stop Sharing</button>'
+    ? `<p class="warn">${strings.page.sharedByMobileServe}</p>` +
+      `<button id="stop" class="secondary">${strings.page.stopSharing}</button>`
     : sharedBy === 'other'
-      ? '<p class="warn">⚠ Every device on this network can open this server. Mobile Serve didn\'t set that up, ' +
-        'so stop the server yourself when you\'re done.</p>'
+      ? `<p class="warn">${strings.page.sharedByOther}</p>`
       : '';
   const otherList = others.map(u =>
     `<li><code>${escapeHtml(u.url)}</code> <span class="dim">(${escapeHtml(u.name)})</span></li>`).join('');
@@ -67,17 +66,15 @@ export function renderPage({ urls, qr, listening, remoteName, sharedBy }: Page, 
   p.hint { opacity: .7; font-size: .9em; }
 </style></head>
 <body>
-  <img src="${escapeHtml(qr)}" alt="QR code for ${escapeHtml(primary.url)}">
+  <img src="${escapeHtml(qr)}" alt="${strings.page.qrAlt(escapeHtml(primary.url))}">
   <div class="url">${escapeHtml(primary.url)}</div>
-  <button id="copy">Copy URL</button>
+  <button id="copy">${strings.page.copyUrl}</button>
   ${status}
   ${sharing}
   ${remoteWarning}
-  <p class="hint">Scan with your phone's camera. Your phone must be on the same Wi-Fi network.
-    If the page doesn't load, allow incoming connections in your computer's firewall, and avoid guest
-    networks, which often block devices from reaching each other.</p>
+  <p class="hint">${strings.page.hint}</p>
   ${https}
-  ${otherList ? `<p class="dim">Other addresses:</p><ul>${otherList}</ul>` : ''}
+  ${otherList ? `<p class="dim">${strings.page.otherAddresses}</p><ul>${otherList}</ul>` : ''}
   <script nonce="${nonce}">
     // acquireVsCodeApi() may only be called once per webview.
     const vscodeApi = acquireVsCodeApi();

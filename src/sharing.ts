@@ -8,6 +8,7 @@ import { listeningPids, listensFrom } from './servers.ts';
 import { restartLocally } from './restart.ts';
 import { restoreSettingInFile } from './settingsFile.ts';
 import { closeShares, isShare, mergeRestored, restoreDecision, stillShared, type Share, type ShareChecks } from './shares.ts';
+import { strings } from './strings.ts';
 
 // Where shares are kept, so a window reload or a force quit doesn't lose track of them.
 const STATE_KEY = 'mobileServe.shares';
@@ -123,7 +124,7 @@ async function closeRestarted(share: Extract<Share, { kind: 'restarted' }>): Pro
   // Already stopped, or restarted by hand: nothing of ours is left to close.
   if (!(await listeningPids(share.port)).includes(share.pid)) return;
   if (await restartLocally(share, { command: share.localCommand, dir: share.dir })) {
-    vscode.window.showInformationMessage(`The dev server is starting again for this computer only (“${share.localCommand}”).`);
+    vscode.window.showInformationMessage(strings.close.startingLocally(share.localCommand));
   }
 }
 
@@ -134,9 +135,9 @@ async function closeLiveServer(share: Extract<Share, { kind: 'liveServer' }>): P
   if (!(await listeningPids(share.port)).length) return;
   if ((await vscode.commands.getCommands(true)).includes(LIVE_SERVER_GO_OFFLINE)) {
     await vscode.commands.executeCommand(LIVE_SERVER_GO_OFFLINE);
-    vscode.window.showInformationMessage('Live Server is stopped and set back to this computer only. Click Go Live to start it again.');
+    vscode.window.showInformationMessage(strings.close.liveServerStopped);
   } else {
-    vscode.window.showWarningMessage('Live Server is set back to this computer only, but is still running on your network. Stop it and click Go Live again.');
+    vscode.window.showWarningMessage(strings.close.liveServerStillRunning);
   }
 }
 
@@ -148,7 +149,7 @@ function closeTask(share: Extract<Share, { kind: 'task' }>): void {
     execution.terminate();
   } else {
     // Started before a window reload that VS Code didn't reconnect the task after.
-    vscode.window.showWarningMessage(`Mobile Serve can't stop the server on port ${share.port}. Stop it in its terminal with Ctrl+C.`);
+    vscode.window.showWarningMessage(strings.close.cantStopTask(share.port));
   }
 }
 
@@ -223,7 +224,7 @@ async function restoreShares(saved: Share[]): Promise<void> {
     } else if (decision === 'restoreLiveServerHost' && share.kind === 'liveServer') {
       try {
         await setLiveServerHost(share.previousHost);
-        vscode.window.showInformationMessage('Mobile Serve set Live Server back to this computer only: VS Code closed while it was shared on your network.');
+        vscode.window.showInformationMessage(strings.close.liveServerRestored);
       } catch (err) {
         // Kept, so Close Mobile still offers to undo it.
         log.warn(`Couldn't put Live Server's host setting back: ${describe(err)}`);
