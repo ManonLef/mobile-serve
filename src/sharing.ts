@@ -60,7 +60,6 @@ export function addTaskShare(port: number, dir: string, onClose: () => void): vo
   addShare({ kind: 'task', port, dir });
 }
 
-// Whether a task is the one Mobile Serve started for `port`.
 export function isOurTask(definition: vscode.TaskDefinition, port: number): boolean {
   return definition.type === TASK_TYPE && definition.port === port;
 }
@@ -182,7 +181,7 @@ async function closeShare(share: Share): Promise<void> {
   else await closeStatic(share);
 }
 
-// Whether Live Server, which runs in this extension host, still serves `port` to the network.
+// Live Server runs in this extension host, so it listens under this process's pid.
 async function liveServerOnNetwork(port: number): Promise<boolean> {
   try {
     if (!(await listeningPids(port)).includes(process.pid)) return false;
@@ -194,7 +193,6 @@ async function liveServerOnNetwork(port: number): Promise<boolean> {
   return !!address && await canConnect(address.address, port);
 }
 
-// Whether the task's server still runs from its folder, for when VS Code hasn't reconnected the task (yet).
 // Without lsof (on Windows), any server on the port counts.
 async function taskStillRunning(share: Extract<Share, { kind: 'task' }>): Promise<boolean> {
   try {

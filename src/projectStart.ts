@@ -25,7 +25,6 @@ export type StartPlan =
   // Runs the package.json script in `dir` (see scriptArgs).
   // `setsHost` when the script already listens on every interface.
   | { kind: 'script'; dir: string; script: string; packageManager: string; tool: Tool; fixedPort?: number; setsHost?: boolean }
-  // Serves `dir` with the static server.
   | { kind: 'static'; dir: string };
 
 async function readJson(file: string): Promise<unknown> {

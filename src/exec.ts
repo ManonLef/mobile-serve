@@ -10,7 +10,6 @@ const SYSTEM_DIRS = ['/usr/sbin', '/usr/bin', '/sbin', '/bin'];
 export interface ExecResult {
   stdout: string;
   stderr: string;
-  // 0, or the non-zero exit code.
   code: number;
 }
 
@@ -47,7 +46,6 @@ export async function execOutput(file: string, args: string[], fallbackDirs = SY
   return undefined;
 }
 
-// execOutput's stdout.
 export async function execQuiet(file: string, args: string[]): Promise<string | undefined> {
   return (await execOutput(file, args))?.stdout;
 }

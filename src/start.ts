@@ -22,7 +22,6 @@ export interface StartOption {
   sharedPort?: number;
 }
 
-// The workspace folders Mobile Serve can start, one option each.
 export async function findStartOptions(): Promise<StartOption[]> {
   const options: StartOption[] = [];
   for (const folder of vscode.workspace.workspaceFolders ?? []) {
