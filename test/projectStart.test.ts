@@ -111,6 +111,10 @@ test('offers the projects below a folder that can\'t be started itself', async (
   await project({ 'package.json': { scripts: { dev: 'turbo dev' } }, 'apps/site/package.json': vite, 'apps/admin/package.json': vite }, async dir => {
     assert.deepStrictEqual(await startedIn(dir), ['apps/admin', 'apps/site']);
   });
+  // The folders right below come first, and a project's own subfolders aren't looked into.
+  await project({ 'apps/web/package.json': vite, 'site/package.json': vite, 'site/examples/package.json': vite }, async dir => {
+    assert.deepStrictEqual(await startedIn(dir), ['site', 'apps/web']);
+  });
   // Not dependencies, build output, hidden folders, anything deeper, or a subfolder's plain HTML.
   await project({
     'node_modules/demo/package.json': vite, 'dist/package.json': vite, '.cache/package.json': vite,
