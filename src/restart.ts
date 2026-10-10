@@ -16,7 +16,6 @@ const START_POLL_MS = 500;
 const SLOW_POLL_MS = 5000;
 const TERMINAL_NAME = 'Dev server (phone)';
 
-// A command and the folder to run it in.
 export interface Run {
   command: string;
   dir: string;

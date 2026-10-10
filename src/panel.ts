@@ -17,7 +17,6 @@ export function showPanel(page: Page): void {
       { viewColumn: vscode.ViewColumn.Beside, preserveFocus: true },
       { enableScripts: true, localResourceRoots: [] });
     const messages = created.webview.onDidReceiveMessage(async message => {
-      // The page's Stop Sharing button.
       if (message?.type === 'stop') {
         await vscode.commands.executeCommand(STOP_COMMAND);
         return;

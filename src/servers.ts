@@ -26,13 +26,11 @@ export interface DevServer {
   pid?: number;
   // Process name, "Live Server" or "Manual".
   label: string;
-  // A dev server process, the Live Server extension inside VS Code, or a port typed in by hand.
   kind: 'process' | 'liveServer' | 'manual';
   // Listens on an address the phone can use. Unknown for a port typed in by hand.
   lanReachable?: boolean;
   // The one IPv4 address it listens on, when it doesn't listen on all of them.
   boundAddress?: string;
-  // Working directory of the server process.
   cwd?: string;
   // Started from one of the open workspace folders.
   inProject?: boolean;
@@ -63,7 +61,6 @@ export function lsofOutput({ stdout, stderr, code }: ExecResult): string {
   return stdout;
 }
 
-// Runs lsof, throwing LSOF_MISSING if it isn't installed.
 async function lsof(args: string[]): Promise<string> {
   const result = await execOutput('lsof', args);
   if (!result) throw new Error(LSOF_MISSING);
@@ -168,7 +165,6 @@ export async function findDevServers(
     .sort((a, b) => a.port - b.port);
 }
 
-// Pids currently listening on a TCP port.
 export async function listeningPids(port: number): Promise<number[]> {
   const stdout = await lsof([`-iTCP:${port}`, '-sTCP:LISTEN', '-nP', '-t']);
   return stdout.split('\n').filter(Boolean).map(Number);

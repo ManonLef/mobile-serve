@@ -60,7 +60,6 @@ export async function getLanAddresses(): Promise<LanAddress[]> {
   return addresses;
 }
 
-// Whether something accepts TCP connections on host:port.
 export function canConnect(host: string, port: number): Promise<boolean> {
   return new Promise(resolve => {
     const socket = net.connect({ host, port, timeout: PROBE_TIMEOUT_MS });
@@ -71,7 +70,7 @@ export function canConnect(host: string, port: number): Promise<boolean> {
   });
 }
 
-// Whether the server on host:port completes a TLS handshake. Dev certificates are usually self-signed.
+// Dev certificates are usually self-signed, so the certificate isn't checked.
 export function speaksTls(host: string, port: number): Promise<boolean> {
   return new Promise(resolve => {
     const socket = tls.connect({ host, port, rejectUnauthorized: false, timeout: PROBE_TIMEOUT_MS });

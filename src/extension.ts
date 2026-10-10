@@ -17,7 +17,6 @@ const DEFAULT_LIVE_SERVER_PORT = 5500;
 const CAN_DETECT_SERVERS = process.platform !== 'win32';
 
 type ServerItem = vscode.QuickPickItem & { server?: DevServer; start?: StartOption; manual?: boolean };
-// What to show on the phone: a folder to start, or a server that's running.
 type Target = { start: StartOption } | { server: DevServer };
 
 // The port the panel offers to stop sharing, if it does.
@@ -186,7 +185,6 @@ function updateStatusBar(item: vscode.StatusBarItem): void {
   item.backgroundColor = new vscode.ThemeColor('statusBarItem.warningBackground');
 }
 
-// Runs a command, showing any error it ends with, with a way to the log for reporting it.
 function reportingErrors(run: () => Promise<void>): () => Promise<void> {
   return async () => {
     try {
