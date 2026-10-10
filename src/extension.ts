@@ -94,13 +94,20 @@ async function chooseItem(): Promise<ServerItem | undefined> {
   let open = true;
   const choice = new Promise<ServerItem | undefined>(resolve => {
     quickPick.onDidAccept(() => resolve(quickPick.selectedItems[0]));
-    quickPick.onDidHide(() => resolve(undefined));
+    quickPick.onDidHide(() => {
+      if (open) log.debug('The list was closed with nothing picked.');
+      resolve(undefined);
+    });
   });
   quickPick.show();
 
   const filled = findWorkspaceServers().then(({ servers, problem }) => {
     if (!open) return;
+    // Replacing the items moves the highlight back to the top, away from what was about to be picked.
+    const active = quickPick.activeItems[0];
     quickPick.items = serverItems(starts, servers, problem);
+    const same = active && quickPick.items.find(item => active.start ? item.start === active.start : !!active.manual && item.manual);
+    if (same) quickPick.activeItems = [same];
     quickPick.placeholder = starts.length ? strings.picker.startOrPick
       : servers.length ? strings.picker.pickOrEnterPort
       : strings.picker.enterRunningPort;

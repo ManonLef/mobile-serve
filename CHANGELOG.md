@@ -5,6 +5,7 @@
 - A project in a subfolder can be started too: when the open folder has no dev script or page of
   its own, Mobile Serve offers the ones up to two folders deep, such as a monorepo's `apps/web` or
   the web app next to a .NET API.
+- The picker keeps the highlighted item when its list of running servers is filled in.
 - Live reload no longer breaks a plain HTML page that has `</body>` inside a script.
 - Opening a folder without the trailing slash always redirects to the same server.
 - The picker, messages and QR code page say "your network" or "other devices" where they said
