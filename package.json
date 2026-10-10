@@ -11,7 +11,7 @@
   "categories": ["Testing", "Other"],
   "keywords": [
     "mobile", "phone", "qr code", "lan", "local network", "dev server", "vite", "nextjs", "live server",
-    "live reload", "responsive", "ios", "android", "safari"
+    "live reload", "responsive", "ios", "android", "safari", "mobile serve", "view mobile"
   ],
   "engines": { "vscode": "^1.82.0" },
   "main": "./dist/extension.js",
