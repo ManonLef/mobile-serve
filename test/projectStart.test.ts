@@ -4,6 +4,7 @@ import * as fs from 'node:fs/promises';
 import * as net from 'node:net';
 import * as os from 'node:os';
 import * as path from 'node:path';
+import { setLogger } from '../src/log.ts';
 import { STATIC_PORT, choosePort, isPortFree, planStart, planStarts, portFor, scriptArgs, type StartPlan } from '../src/projectStart.ts';
 
 // A temporary project folder with the given files, which may be in subfolders; `package.json` may be an object.
@@ -117,6 +118,34 @@ test('offers the projects below a folder that can\'t be started itself', async (
   }, async dir => {
     assert.deepStrictEqual(await startedIn(dir), []);
   });
+});
+
+test('offers every project below a folder, however many', async () => {
+  const vite = { scripts: { dev: 'vite' } };
+  const apps = Array.from({ length: 8 }, (_, i) => `apps/app${i}`);
+  await project(Object.fromEntries(apps.map(app => [`${app}/package.json`, vite])), async dir => {
+    assert.deepStrictEqual((await planStarts(dir)).map(plan => path.relative(dir, plan.dir).split(path.sep).join('/')), apps);
+  });
+});
+
+test('stops looking after 200 folders, and says so in the log', async () => {
+  const vite = { scripts: { dev: 'vite' } };
+  const names = (count: number) => Array.from({ length: count }, (_, i) => `p${String(i).padStart(3, '0')}/package.json`);
+  const logged: string[] = [];
+  setLogger({ debug: () => {}, info: message => logged.push(message), warn: () => {}, error: () => {} });
+  try {
+    await project(Object.fromEntries(names(200).map(name => [name, vite])), async dir => {
+      assert.strictEqual((await planStarts(dir)).length, 200);
+      assert.deepStrictEqual(logged, []);
+    });
+    await project(Object.fromEntries(names(201).map(name => [name, vite])), async dir => {
+      assert.strictEqual((await planStarts(dir)).length, 200);
+      assert.strictEqual(logged.length, 1);
+      assert.match(logged[0], /200 folders/);
+    });
+  } finally {
+    setLogger(undefined);
+  }
 });
 
 test('starts the folder itself rather than the projects below it', async () => {

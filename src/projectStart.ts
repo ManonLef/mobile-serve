@@ -4,6 +4,7 @@
 import * as fs from 'node:fs/promises';
 import * as net from 'node:net';
 import * as path from 'node:path';
+import { log } from './log.ts';
 import { canConnect } from './network.ts';
 import { detectPackageManager, readPackageJson, runScriptArgs } from './packageManager.ts';
 import { SAFE_SCRIPT_NAME, devServerTool, type Tool } from './tools.ts';
@@ -25,9 +26,8 @@ const PORT_ATTEMPTS = 20;
 const NESTED_DEPTH = 2;
 // Dependencies and build output, which are never the user's own project.
 const SKIPPED_FOLDERS = new Set(['node_modules', 'bower_components', 'vendor', 'dist', 'build', 'out', 'target', 'bin', 'obj', 'coverage']);
-// Keeps the picker quick and short in a folder with a great many subfolders or projects.
+// Keeps the picker quick in a folder with a great many subfolders. Every project found is offered.
 const MAX_FOLDERS_SEARCHED = 200;
-const MAX_NESTED_PLANS = 5;
 
 export type StartPlan =
   // Runs the package.json script in `dir` (see scriptArgs).
@@ -82,7 +82,8 @@ async function subfolders(dir: string): Promise<string[]> {
 /**
  * How to start `dir`, or, when it can't be started itself, the projects with a dev script in the
  * folders below it (a monorepo's apps/web, say). Plain HTML only counts in `dir` itself: a
- * subfolder with an index.html is as likely to be documentation or a test fixture.
+ * subfolder with an index.html is as likely to be documentation or a test fixture. The folders
+ * right below `dir` are looked at first, and the search stops after MAX_FOLDERS_SEARCHED of them.
  */
 export async function planStarts(dir: string): Promise<StartPlan[]> {
   const own = await planStart(dir);
@@ -94,7 +95,10 @@ export async function planStarts(dir: string): Promise<StartPlan[]> {
     const next: string[] = [];
     for (const parent of level) {
       for (const folder of await subfolders(parent)) {
-        if (plans.length === MAX_NESTED_PLANS || searched++ === MAX_FOLDERS_SEARCHED) return plans;
+        if (searched++ === MAX_FOLDERS_SEARCHED) {
+          log.info(`${dir}: stopped looking for projects after ${MAX_FOLDERS_SEARCHED} folders, so some may not be offered.`);
+          return plans;
+        }
         const plan = await planStart(folder);
         // A project isn't looked into any further: what's below it is its own.
         if (plan?.kind === 'script') plans.push(plan);
