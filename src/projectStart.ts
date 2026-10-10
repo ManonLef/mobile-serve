@@ -24,8 +24,9 @@ export const STATIC_PORT = 5600;
 const PORT_ATTEMPTS = 20;
 // How far below a folder to look for projects: far enough for a monorepo's apps/web or packages/site.
 const NESTED_DEPTH = 2;
-// Dependencies and build output, which are never the user's own project.
-const SKIPPED_FOLDERS = new Set(['node_modules', 'bower_components', 'vendor', 'dist', 'build', 'out', 'target', 'bin', 'obj', 'coverage']);
+// Dependencies, and the build output a package.json is often copied into. Other build folders
+// (build, out, target…) need no rule: without a dev script of their own they aren't offered anyway.
+const SKIPPED_FOLDERS = new Set(['node_modules', 'bower_components', 'vendor', 'dist']);
 // Keeps the picker quick in a folder with a great many subfolders. Every project found is offered.
 const MAX_FOLDERS_SEARCHED = 200;
 
