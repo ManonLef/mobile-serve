@@ -65,8 +65,10 @@ try {
         version,
         extensionDevelopmentPath: root,
         extensionTestsPath: path.join(root, 'out', 'smoke', 'run.js'),
-        // Only Mobile Serve, logging everything, and no trust prompt in front of the window.
-        launchArgs: [workspace, '--disable-extensions', '--disable-workspace-trust', '--log', `${publisher}.${name}:debug`],
+        // Only Mobile Serve, logging everything, and no trust prompt in front of the window. The log
+        // level is one argument with "--log=": on its own, "publisher.name:debug" looks like a URL,
+        // and older VS Code on Windows won't start with options after a URL.
+        launchArgs: [workspace, '--disable-extensions', '--disable-workspace-trust', `--log=${publisher}.${name}:debug`],
       });
     } catch (err) {
       console.error(`Mobile Serve's log:\n${extensionLog()}`);
