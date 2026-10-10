@@ -108,8 +108,12 @@ call an API or backend sometimes need a small change:
 Making a server reachable from one device makes it reachable from every device on that network.
 Avoid doing this on public or untrusted Wi-Fi, and stop sharing when you're done: dev servers aren't
 built to face a network, and Live Server serves every file in the folder, `.env` and `.git` included.
-Mobile Serve's own server for plain HTML never serves files or folders whose name starts with a dot,
-nor anything outside the folder.
+
+Mobile Serve's own server for plain HTML is more careful about what it serves: never files or
+folders whose name starts with a dot, nor anything outside the folder. Everything else in the folder
+can still be opened by anyone on the network who asks for it by name. That sharing takes one click
+doesn't make it something to think less about: check what's in the folder, and which network you're
+on, before you share.
 
 **Close Mobile** undoes what Mobile Serve changed: it stops a server it started, restarts a server it
 restarted with the original script, and puts Live Server's host setting back (stopping Live Server
