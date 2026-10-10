@@ -52,12 +52,12 @@ async function findWorkspaceServers(): Promise<{ servers: DevServer[]; problem?:
 }
 
 function startItem(option: StartOption): ServerItem {
-  const { folder, plan, sharedPort } = option;
+  const { name, plan, sharedPort } = option;
   if (sharedPort !== undefined) {
-    return { label: `$(device-mobile) ${folder.name}`, description: strings.picker.shared(sharedPort), detail: strings.picker.showAgain, start: option };
+    return { label: `$(device-mobile) ${name}`, description: strings.picker.shared(sharedPort), detail: strings.picker.showAgain, start: option };
   }
   return {
-    label: `$(play) ${strings.picker.start(folder.name)}`,
+    label: `$(play) ${strings.picker.start(name)}`,
     description: describePlan(plan),
     detail: plan.kind === 'static'
       ? strings.picker.staticDetail
@@ -83,7 +83,7 @@ function serverItems(starts: StartOption[], servers: DevServer[], problem?: stri
 
 // Shows the list straight away and fills it in once lsof has answered.
 async function chooseItem(): Promise<ServerItem | undefined> {
-  // Only reads package.json and index.html, so it's quick enough to wait for.
+  // Only reads package.json and index.html, in the folder or just below it, so it's quick enough to wait for.
   const starts = await findStartOptions();
   const quickPick = vscode.window.createQuickPick<ServerItem>();
   quickPick.title = strings.picker.title;
@@ -94,13 +94,20 @@ async function chooseItem(): Promise<ServerItem | undefined> {
   let open = true;
   const choice = new Promise<ServerItem | undefined>(resolve => {
     quickPick.onDidAccept(() => resolve(quickPick.selectedItems[0]));
-    quickPick.onDidHide(() => resolve(undefined));
+    quickPick.onDidHide(() => {
+      if (open) log.debug('The list was closed with nothing picked.');
+      resolve(undefined);
+    });
   });
   quickPick.show();
 
   const filled = findWorkspaceServers().then(({ servers, problem }) => {
     if (!open) return;
+    // Replacing the items moves the highlight back to the top, away from what was about to be picked.
+    const active = quickPick.activeItems[0];
     quickPick.items = serverItems(starts, servers, problem);
+    const same = active && quickPick.items.find(item => active.start ? item.start === active.start : !!active.manual && item.manual);
+    if (same) quickPick.activeItems = [same];
     quickPick.placeholder = starts.length ? strings.picker.startOrPick
       : servers.length ? strings.picker.pickOrEnterPort
       : strings.picker.enterRunningPort;

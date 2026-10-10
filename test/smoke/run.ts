@@ -1,8 +1,11 @@
-// Runs inside a real VS Code, with Mobile Serve loaded and a plain HTML folder open (see
-// scripts/smokeTest.ts): the extension activates, its commands exist, and Go Live's equivalent works
-// end to end: pick the folder, its page is served with live reload, Stop Sharing stops it.
+// Runs inside a real VS Code, with Mobile Serve loaded and a workspace open that has a plain HTML
+// folder and a monorepo (see scripts/smokeTest.ts): the extension activates, its commands exist, and
+// Go Live's equivalent works end to end: pick the folder, its page is served with live reload, Stop
+// Sharing stops it. Then the monorepo's two apps are started at once, each on its own port.
 import * as assert from 'node:assert';
+import * as fs from 'node:fs';
 import * as http from 'node:http';
+import * as path from 'node:path';
 import * as vscode from 'vscode';
 
 // Mobile Serve's static server starts on 5600, or one of the ports after it (see projectStart.ts).
@@ -48,16 +51,23 @@ async function registersItsCommands(extension: vscode.Extension<unknown>): Promi
 
 // What clicking Mobile and then "Start ‹folder› on your network" does.
 async function servesThePlainHtmlFolder(): Promise<void> {
-  let shown = false;
-  const show = Promise.resolve(vscode.commands.executeCommand('mobileServe.show')).finally(() => shown = true);
-  // The picker opens once the folder has been looked at; the start option is its first item.
-  for (const end = Date.now() + TIMEOUT_MS; !shown && Date.now() < end;) {
+  let open = false;
+  let show: Promise<unknown> | undefined;
+  let page: Awaited<ReturnType<typeof findServedPage>>;
+  // The picker opens once the folders have been looked at; the start option is its first item.
+  for (const end = Date.now() + TIMEOUT_MS; !(page = await findServedPage()) && Date.now() < end;) {
+    if (!open) {
+      // Clicked again when the picker closed with nothing picked, as a person would. It closes when
+      // the window loses the focus, as it does when someone uses the computer while this runs.
+      if (show) console.log('The picker closed with nothing picked, so Mobile is clicked again.');
+      open = true;
+      show = Promise.resolve(vscode.commands.executeCommand('mobileServe.show')).finally(() => open = false);
+    }
     await vscode.commands.executeCommand('workbench.action.acceptSelectedQuickOpenItem');
     await sleep(250);
   }
   await show;
 
-  const page = await findServedPage();
   assert.ok(page, 'The folder isn\'t served on any port from 5600. Does this computer have a network address?');
   assert.match(page.body, /\/__mobile-serve\/reload/, 'The page has no live reload script');
 
@@ -65,9 +75,59 @@ async function servesThePlainHtmlFolder(): Promise<void> {
   assert.strictEqual(await getPage(page.port), undefined, `Port ${page.port} still answers after Stop Sharing`);
 }
 
+// The tasks Mobile Serve runs dev scripts in.
+const devTasks = () => vscode.tasks.taskExecutions.filter(execution => execution.task.definition.type === 'mobileServe');
+
+async function until(done: () => boolean | Promise<boolean>): Promise<void> {
+  for (const end = Date.now() + TIMEOUT_MS; !await done() && Date.now() < end;) await sleep(250);
+}
+
+// Clicks Mobile and picks the item `below` places under the first one, again until `picked`: the
+// picker opens a moment after the command, and a test can't see when.
+async function pickItem(below: number, picked: () => boolean): Promise<void> {
+  for (const end = Date.now() + TIMEOUT_MS; !picked() && Date.now() < end;) {
+    void vscode.commands.executeCommand('mobileServe.show');
+    await sleep(2000);
+    for (let i = 0; i < below; i++) await vscode.commands.executeCommand('workbench.action.quickOpenSelectNext');
+    await vscode.commands.executeCommand('workbench.action.acceptSelectedQuickOpenItem');
+    await sleep(500);
+  }
+}
+
+// The monorepo's apps come after the plain HTML folder in the picker. The second is started while
+// the first isn't listening yet, when its port still looks free.
+async function startsTheMonoreposAppsSideBySide(): Promise<void> {
+  const monorepo = vscode.workspace.workspaceFolders?.find(folder => folder.name === 'monorepo');
+  assert.ok(monorepo, 'The monorepo isn\'t a workspace folder');
+  // What the stand-in dev servers wait for before they listen (see scripts/smokeTest.ts). Left
+  // behind by the VS Code version tested before this one.
+  const ready = path.join(monorepo.uri.fsPath, 'ready');
+  fs.rmSync(ready, { force: true });
+  await pickItem(1, () => devTasks().length === 1);
+  await pickItem(2, () => devTasks().length === 2);
+
+  const tasks = devTasks().map(({ task }) => ({ name: task.name, port: task.definition.port as number }));
+  assert.deepStrictEqual(tasks.map(task => task.name).sort(),
+    ['monorepo/apps/admin: dev (network)', 'monorepo/apps/site: dev (network)'], 'The two apps aren\'t both started');
+  assert.notStrictEqual(tasks[0].port, tasks[1].port, 'Both apps were given the same port');
+
+  fs.writeFileSync(ready, '');
+  for (const { name, port } of tasks) {
+    const app = name.includes('admin') ? 'admin' : 'site';
+    let body: string | undefined;
+    await until(async () => !!(body = await getPage(port)));
+    assert.strictEqual(body, `<h1>${app}</h1>`, `Port ${port} doesn't serve ${app}`);
+  }
+
+  await vscode.commands.executeCommand('mobileServe.stop');
+  await until(() => !devTasks().length);
+  assert.strictEqual(devTasks().length, 0, 'The dev scripts still run after Stop Sharing');
+}
+
 export async function run(): Promise<void> {
   const extension = await activates();
   await registersItsCommands(extension);
   await servesThePlainHtmlFolder();
+  await startsTheMonoreposAppsSideBySide();
   console.log('Smoke test passed.');
 }

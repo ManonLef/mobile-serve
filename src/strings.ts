@@ -68,8 +68,8 @@ export const strings = {
   },
 
   start: {
-    // The name of the terminal the dev script runs in.
-    taskName: (script: string) => `${script} (network)`,
+    // The name of the terminal the dev script runs in, with the project's path when it's below the folder.
+    taskName: (script: string, project?: string) => `${project ? `${project}: ` : ''}${script} (network)`,
     starting: (command: string) => `Starting “${command}” on your network…`,
     stoppedEarly: (terminal: string) => `The dev server stopped before other devices could reach it. Check the “${terminal}” terminal.`,
     notReachableYet: (seconds: number, terminal: string) => `The dev server isn't reachable after ${seconds} seconds. ` +

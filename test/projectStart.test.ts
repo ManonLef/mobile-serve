@@ -4,13 +4,14 @@ import * as fs from 'node:fs/promises';
 import * as net from 'node:net';
 import * as os from 'node:os';
 import * as path from 'node:path';
-import { choosePort, isPortFree, planStart, portFor, scriptArgs, type StartPlan } from '../src/projectStart.ts';
+import { STATIC_PORT, choosePort, isPortFree, planStart, planStarts, portFor, scriptArgs, type StartPlan } from '../src/projectStart.ts';
 
-// A temporary project folder with the given files; `package.json` may be an object.
+// A temporary project folder with the given files, which may be in subfolders; `package.json` may be an object.
 async function project(files: Record<string, unknown>, run: (dir: string) => Promise<void>): Promise<void> {
   const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'mobile-serve-'));
   try {
     for (const [name, content] of Object.entries(files)) {
+      await fs.mkdir(path.dirname(path.join(dir, name)), { recursive: true });
       await fs.writeFile(path.join(dir, name), typeof content === 'string' ? content : JSON.stringify(content));
     }
     await run(dir);
@@ -98,6 +99,35 @@ test('offers nothing for servers it doesn\'t know, or a folder without a page', 
   });
 });
 
+test('offers the projects below a folder that can\'t be started itself', async () => {
+  const ng = { scripts: { start: 'ng serve' } };
+  const vite = { scripts: { dev: 'vite' } };
+  const startedIn = async (dir: string) => (await planStarts(dir)).map(plan => path.relative(dir, plan.dir).split(path.sep).join('/'));
+  // An API next to the web app, as in a .NET solution; a root package.json that only runs the others.
+  await project({ 'applications/web/package.json': ng, 'applications/api/Api.csproj': '' }, async dir => {
+    assert.deepStrictEqual(await startedIn(dir), ['applications/web']);
+  });
+  await project({ 'package.json': { scripts: { dev: 'turbo dev' } }, 'apps/site/package.json': vite, 'apps/admin/package.json': vite }, async dir => {
+    assert.deepStrictEqual(await startedIn(dir), ['apps/admin', 'apps/site']);
+  });
+  // Not dependencies, build output, hidden folders, anything deeper, or a subfolder's plain HTML.
+  await project({
+    'node_modules/demo/package.json': vite, 'dist/package.json': vite, '.cache/package.json': vite,
+    'a/b/c/package.json': vite, 'docs/index.html': '',
+  }, async dir => {
+    assert.deepStrictEqual(await startedIn(dir), []);
+  });
+});
+
+test('starts the folder itself rather than the projects below it', async () => {
+  await project({ ...scripts({ dev: 'vite' }), 'examples/demo/package.json': { scripts: { dev: 'vite' } } }, async dir => {
+    assert.deepStrictEqual(await planStarts(dir), [await planStart(dir)]);
+  });
+  await project({ 'index.html': '', 'tools/site/package.json': { scripts: { dev: 'vite' } } }, async dir => {
+    assert.deepStrictEqual(await planStarts(dir), [{ kind: 'static', dir }]);
+  });
+});
+
 test('choosePort skips a port that only listens on localhost', async () => {
   const server = net.createServer();
   await new Promise<void>(resolve => server.listen(0, '127.0.0.1', resolve));
@@ -111,4 +141,12 @@ test('choosePort skips a port that only listens on localhost', async () => {
   } finally {
     await new Promise(resolve => server.close(resolve));
   }
+});
+
+test('choosePort leaves a port alone that another start has taken', async () => {
+  const free = await choosePort(STATIC_PORT);
+  assert.notStrictEqual(await choosePort(free, port => port === free), free);
+  // A script that insists on that port can't start either.
+  const plan = { kind: 'script', dir: '/app', script: 'dev', packageManager: 'npm', fixedPort: free } as StartPlan;
+  await assert.rejects(portFor(plan, port => port === free), /already taken/);
 });

@@ -50,6 +50,11 @@ Mobile Serve looks at each open workspace folder and starts it the way that suit
   and swaps the stylesheets in place when only CSS changed. A `package.json` whose only server is a
   static file server (`live-server`, `http-server`, `serve`…) counts as plain HTML too.
 
+When the folder itself can't be started, Mobile Serve looks up to two folders deep for projects
+with such a dev script and offers each one, by its path: **Start applications/web on your network**.
+That covers a web app next to its API, or the apps in a monorepo. Whatever the web app needs besides
+(the API, a database) you start yourself, as usual.
+
 Projects it doesn't know how to start (a script that runs several commands, Django, Rails…) can
 still be shown: start them yourself and pick them from the list, or enter the port.
 
