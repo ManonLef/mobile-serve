@@ -124,7 +124,7 @@ export function startStaticServer(root: string, port: number): Promise<StaticSer
     return isInside(real, root) && !isHidden(path.relative(root, real)) ? real : undefined;
   };
 
-  const handle =async (req: http.IncomingMessage, res: http.ServerResponse): Promise<void> => {
+  const handle = async (req: http.IncomingMessage, res: http.ServerResponse): Promise<void> => {
     if (!isAllowedHost(req.headers.host)) {
       log.info(`Refused a request for ${req.headers.host ?? 'no host'}: the static server only answers to IP addresses and localhost.`);
       return send(res, 403, 'Open this page by its IP address');

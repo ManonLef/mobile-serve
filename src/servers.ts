@@ -148,7 +148,7 @@ export async function getWorkingDirs(pids: number[]): Promise<Map<number, string
 // `workspaceFolders` should already be real paths (see realPath).
 export async function findDevServers(
   { liveServerPort, extensionHostPid, workspaceFolders = [] }:
-    { liveServerPort?: number; extensionHostPid?: number; workspaceFolders?: string[] } = {},
+  { liveServerPort?: number; extensionHostPid?: number; workspaceFolders?: string[] } = {},
 ): Promise<DetectedServer[]> {
   const stdout = await lsof(['-iTCP', '-sTCP:LISTEN', '-nP', '-F', 'pcn']);
   const servers = collectServers(parseLsof(stdout), liveServerPort, extensionHostPid);

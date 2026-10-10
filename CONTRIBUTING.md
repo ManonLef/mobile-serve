@@ -12,6 +12,8 @@ Needs Node.js 22.18 or newer. Run `npm install`, then:
   `npm run test:vscode` runs it locally, but downloads about 1.2 GB into `.vscode-test/`, which you
   can delete afterwards.
 - `npm run check` type-checks the code.
+- `npm run lint` checks it with ESLint, formatting included. `npm run lint -- --fix` applies the
+  formatting.
 - `npm run install-dev` builds the extension and installs it into your everyday VS Code
   (`~/.vscode/extensions`): over the installed copy if there is one, or else as `mobile-serve-dev`.
   Run **Developer: Reload Window** afterwards.
