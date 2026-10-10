@@ -19,6 +19,12 @@ Needs Node.js 22.18 or newer. Run `npm install`, then:
   Run **Developer: Reload Window** afterwards.
 - `npx @vscode/vsce@4 package` builds the `.vsix`.
 
+Most of the logic is in modules that don't import `vscode` (`shares.ts`, `projectStart.ts`,
+`restartCommand.ts`, `processes.ts`, `servers.ts`, `staticServer.ts`…), so the unit tests run them in
+plain Node. The modules that do import it (`sharing.ts`, `start.ts`, `restart.ts`, `extension.ts`…)
+gather what those need to know, then show the dialogs, run the tasks and stop the processes. New
+logic goes in the first kind, with a test.
+
 The source in `src/` is TypeScript using ES modules. esbuild bundles it into a single CommonJS
 file, `dist/extension.js`, because that's the format VS Code loads extensions in. The small `package.json`
 files in `src/`, `test/` and `scripts/` only set `"type": "module"`, so Node runs those folders as ES
