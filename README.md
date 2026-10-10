@@ -9,6 +9,8 @@ project on your computer (or uses the dev server you already have running), work
 other devices can reach it on, and shows that address as a URL and a QR code. Open it on the device
 and the page runs in that device's own browser: real touch, real screen size, real Safari or Chrome.
 
+![Clicking Mobile in the status bar, starting the project, the panel with the QR code and URL, and the page open on a phone](screencap-mobile-serve.gif)
+
 ## Privacy
 
 Mobile Serve has no telemetry and needs no account. It doesn't use a tunnel: your project is served

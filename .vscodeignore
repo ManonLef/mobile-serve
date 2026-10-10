@@ -10,6 +10,7 @@ node_modules/**
 .github/**
 tsconfig.json
 *.vsix
+*.gif
 .gitignore
 **/*.map
 package-lock.json
