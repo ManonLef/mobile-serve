@@ -6,7 +6,9 @@ import * as os from 'node:os';
 import * as path from 'node:path';
 
 // What a .vsix contains (see .vscodeignore).
-const FILES = ['package.json', 'README.md', 'LICENSE', 'dist/extension.js', 'dist/THIRD_PARTY_NOTICES.txt'];
+const FILES = [
+  'package.json', 'README.md', 'CHANGELOG.md', 'LICENSE', 'icon.png', 'dist/extension.js', 'dist/THIRD_PARTY_NOTICES.txt',
+];
 const DEV_FOLDER = 'mobile-serve-dev';
 
 const { publisher, name } = JSON.parse(fs.readFileSync('package.json', 'utf8'));

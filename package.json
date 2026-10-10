@@ -5,6 +5,7 @@
   "version": "0.1.1",
   "publisher": "ManonLef",
   "license": "MIT",
+  "icon": "icon.png",
   "repository": { "type": "git", "url": "https://github.com/ManonLef/mobile-serve.git" },
   "homepage": "https://github.com/ManonLef/mobile-serve#readme",
   "bugs": { "url": "https://github.com/ManonLef/mobile-serve/issues" },

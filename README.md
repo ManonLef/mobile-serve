@@ -135,6 +135,11 @@ For more detail, run **Developer: Set Log Level…**, choose Mobile Serve and th
 Mobile Serve is MIT-licensed. The packages bundled into the extension are listed with their licenses
 in `dist/THIRD_PARTY_NOTICES.txt`, which the build generates.
 
+The icon is based on "Mobile Signal" from
+[Dazzle Line Icons](https://www.svgrepo.com/svg/533054/mobile-signal) by Dazzle UI, licensed under the
+[CC Attribution License](https://www.svgrepo.com/page/licensing/#CC%20Attribution). It was modified
+for this logo.
+
 "QR Code" is a registered trademark of DENSO WAVE INCORPORATED.
 
 ## Contributing
