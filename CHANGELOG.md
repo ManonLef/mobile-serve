@@ -1,5 +1,10 @@
 # Changelog
 
+## Unreleased
+
+- Live reload no longer breaks a plain HTML page that has `</body>` inside a script.
+- Opening a folder without the trailing slash always redirects to the same server.
+
 ## 0.2.0 - 2026-10-10
 
 The first public release.

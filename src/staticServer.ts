@@ -53,8 +53,9 @@ export interface StaticServer {
 }
 
 export function injectReloadScript(html: string): string {
-  const end = html.search(/<\/body\s*>/i);
-  return end === -1 ? html + RELOAD_SCRIPT : html.slice(0, end) + RELOAD_SCRIPT + html.slice(end);
+  // The last one: an earlier "</body>" is text inside a script or a comment.
+  const end = [...html.matchAll(/<\/body\s*>/gi)].at(-1)?.index;
+  return end === undefined ? html + RELOAD_SCRIPT : html.slice(0, end) + RELOAD_SCRIPT + html.slice(end);
 }
 
 // Whether a path has a part starting with "." (.env, .git…). Backslashes too, which Windows reads as separators.
@@ -150,7 +151,8 @@ export function startStaticServer(root: string, port: number): Promise<StaticSer
       if (stat.isDirectory()) {
         // Relative links in the folder's index.html need the trailing slash.
         const { pathname, search } = new URL(urlPath, 'http://localhost');
-        if (!pathname.endsWith('/')) return send(res, 301, 'Moved', { Location: pathname + '/' + search });
+        // One leading slash: a browser reads "//blog/" as another server, called blog.
+        if (!pathname.endsWith('/')) return send(res, 301, 'Moved', { Location: pathname.replace(/^\/+/, '/') + '/' + search });
         // The index.html can be a symlink too.
         file = await servable(path.join(file, 'index.html'));
         if (!file) return send(res, 404, 'Not found');

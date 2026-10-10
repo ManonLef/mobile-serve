@@ -11,14 +11,19 @@ const LOCKFILES = [
   ['package-lock.json', 'npm'],
 ];
 
-async function readPackageManagerField(dir: string): Promise<string | undefined> {
+export async function readPackageJson(dir: string): Promise<Record<string, unknown> | undefined> {
   try {
-    const field = JSON.parse(await fs.readFile(path.join(dir, 'package.json'), 'utf8')).packageManager;
-    const name = typeof field === 'string' ? field.split('@')[0] : undefined;
-    return name && PACKAGE_MANAGERS.includes(name) ? name : undefined;
+    const parsed: unknown = JSON.parse(await fs.readFile(path.join(dir, 'package.json'), 'utf8'));
+    return parsed && typeof parsed === 'object' ? parsed as Record<string, unknown> : undefined;
   } catch {
     return undefined;
   }
+}
+
+async function readPackageManagerField(dir: string): Promise<string | undefined> {
+  const field = (await readPackageJson(dir))?.packageManager;
+  const name = typeof field === 'string' ? field.split('@')[0] : undefined;
+  return name && PACKAGE_MANAGERS.includes(name) ? name : undefined;
 }
 
 // Looks in `dir` and the folders above it, so packages in a monorepo use the repo's package manager.

@@ -10,6 +10,9 @@ test('injectReloadScript goes before </body>, or at the end without one', () => 
   const page = injectReloadScript('<html><body><p>Hi</p></BODY></html>');
   assert.match(page, /<p>Hi<\/p><script>[\s\S]*EventSource[\s\S]*<\/script><\/BODY><\/html>$/);
   assert.match(injectReloadScript('<p>Hi</p>'), /^<p>Hi<\/p><script>[\s\S]*<\/script>$/);
+  // A "</body>" inside a script's string isn't the end of the page.
+  const scripted = injectReloadScript('<body><script>const end = "</body>";</script><p>Hi</p></body>');
+  assert.match(scripted, /^<body><script>const end = "<\/body>";<\/script><p>Hi<\/p><script>[\s\S]*EventSource[\s\S]*<\/script><\/body>$/);
 });
 
 test('resolveRequestPath stays inside the folder and skips hidden files', () => {
@@ -96,6 +99,8 @@ test('serves the folder, adding live reload to HTML pages', async () => {
     const blog = await get(server, '/blog?x=1');
     assert.deepStrictEqual([blog.status, blog.headers.location], [301, '/blog/?x=1']);
     assert.match((await get(server, '/blog/')).body, /<h1>Blog<\/h1>/);
+    // The redirect stays on this server: "//blog/" would send the browser to a server called blog.
+    assert.strictEqual((await get(server, '/.//blog')).headers.location, '/blog/');
 
     // How iOS Safari loads a video.
     assert.strictEqual(css.headers['accept-ranges'], 'bytes');
