@@ -122,7 +122,7 @@ test('collectServers leaves out Live Server running in another VS Code window', 
 
 test('listensFrom tells the folder a server runs from', { skip: process.platform === 'win32' && 'needs lsof' }, async () => {
   const dir = await fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(), 'mobile-serve-')));
-  const server = spawn(process.execPath, ['-e', 'require("net").createServer().listen(0, function () { console.log(this.address().port) })'], { cwd: dir });
+  const server = spawn(process.execPath, ['-e', 'require("net").createServer().listen(0, function () { console.log(String(this.address().port)) })'], { cwd: dir });
   try {
     const port = await new Promise<number>(resolve => server.stdout.once('data', data => resolve(Number(String(data)))));
     assert.strictEqual(await listensFrom(port, dir), true);
