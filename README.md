@@ -9,6 +9,12 @@ project on your computer (or uses the dev server you already have running), work
 other devices can reach it on, and shows that address as a URL and a QR code. Open it on the device
 and the page runs in that device's own browser: real touch, real screen size, real Safari or Chrome.
 
+## Privacy
+
+Mobile Serve has no telemetry and needs no account. It doesn't use a tunnel: your project is served
+from your computer to devices on your own network, and nothing goes through a server on the
+internet. The QR code is made on your computer too.
+
 ## Instructions
 
 1. Click **📱 Mobile** in the status bar, or run **Mobile Serve: Show Phone URL** from the Command Palette.
@@ -120,7 +126,7 @@ Run **Mobile Serve: Show Log** from the Command Palette (or click **Show Log** o
 what Mobile Serve did: the servers it found, what it started or stopped, and what went wrong. Paste it
 into an [issue](https://github.com/ManonLef/mobile-serve/issues), together with your operating system
 and how you started your project. The log contains folder paths and process IDs, so look it over
-first. It stays on your computer: Mobile Serve doesn't send anything anywhere.
+first. It stays on your computer until you paste it somewhere.
 
 For more detail, run **Developer: Set Log Level…**, choose Mobile Serve and then **Debug**.
 
@@ -131,27 +137,7 @@ in `dist/THIRD_PARTY_NOTICES.txt`, which the build generates.
 
 "QR Code" is a registered trademark of DENSO WAVE INCORPORATED.
 
-## Development
+## Contributing
 
-Needs Node.js 22.18 or newer. Run `npm install`, then:
-
-- **F5** builds the extension and starts a VS Code window with it loaded.
-- `npm test` runs the unit tests. Node runs the TypeScript files directly.
-- The smoke test runs the extension in a real VS Code: the current release and the oldest one
-  `engines` allows (1.82). It opens a plain HTML folder, picks **Start ‹folder› for your phone**,
-  checks the page is served with live reload, and that **Stop Sharing** stops it. It isn't part of CI,
-  since it downloads VS Code each time: add the `smoke-test` label to a pull request to run it there
-  (remove and add the label again to rerun). To try other versions, use **Actions → Smoke test → Run
-  workflow**, or `gh workflow run smoke.yml --ref <branch> -f versions="stable 1.90.0"`.
-  `npm run test:vscode` runs it locally, but downloads about 1.2 GB into `.vscode-test/`, which you
-  can delete afterwards.
-- `npm run check` type-checks the code.
-- `npm run install-dev` builds the extension and installs it into your everyday VS Code
-  (`~/.vscode/extensions`): over the installed copy if there is one, or else as `mobile-serve-dev`.
-  Run **Developer: Reload Window** afterwards.
-- `npx @vscode/vsce@4 package` builds the `.vsix`.
-
-The source in `src/` is TypeScript using ES modules. esbuild bundles it into a single CommonJS
-file, `dist/extension.js`, because that's the format VS Code loads extensions in. The small `package.json`
-files in `src/`, `test/` and `scripts/` only set `"type": "module"`, so Node runs those folders as ES
-modules while the root package, and with it `dist/extension.js`, stays CommonJS.
+See [CONTRIBUTING.md](https://github.com/ManonLef/mobile-serve/blob/main/CONTRIBUTING.md) for how
+to build and test the extension.
