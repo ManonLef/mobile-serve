@@ -2,7 +2,7 @@
   "name": "mobile-serve",
   "displayName": "Mobile Serve",
   "description": "Open your project on your real phone, or any device on your network, like Go Live: start it or pick a running server, scan a QR code, done.",
-  "version": "0.1.1",
+  "version": "0.2.0",
   "publisher": "ManonLef",
   "license": "MIT",
   "icon": "icon.png",
