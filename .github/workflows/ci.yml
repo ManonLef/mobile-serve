@@ -1,4 +1,4 @@
-# Type-checks, tests and builds the extension on every platform it runs on.
+# Type-checks, lints, tests and builds the extension on every platform it runs on.
 name: CI
 
 on:
@@ -25,5 +25,6 @@ jobs:
           cache: npm
       - run: npm ci
       - run: npm run check
+      - run: npm run lint
       - run: npm test
       - run: npm run build
