@@ -99,6 +99,8 @@ test('serves the folder, adding live reload to HTML pages', async () => {
     const blog = await get(server, '/blog?x=1');
     assert.deepStrictEqual([blog.status, blog.headers.location], [301, '/blog/?x=1']);
     assert.match((await get(server, '/blog/')).body, /<h1>Blog<\/h1>/);
+    // The redirect stays on this server: "//blog/" would send the browser to a server called blog.
+    assert.strictEqual((await get(server, '/.//blog')).headers.location, '/blog/');
 
     // How iOS Safari loads a video.
     assert.strictEqual(css.headers['accept-ranges'], 'bytes');
