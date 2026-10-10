@@ -1,6 +1,7 @@
 // What Mobile Serve has made reachable from the network, and the decisions about it that don't need
 // VS Code: what to pick up after a window reload, and how Close Mobile goes through it all.
 // sharing.ts does the closing and checking itself.
+import { describe } from './log.ts';
 
 export type Share =
   // A dev server Mobile Serve restarted with its host flag. Closing restarts it with `localCommand`.
@@ -106,7 +107,7 @@ export async function closeShares(shares: readonly Share[], { close, stillShared
     try {
       await close(share);
     } catch (err) {
-      failures.push(`port ${share.port} (${err instanceof Error ? err.message : String(err)})`);
+      failures.push(`port ${share.port} (${describe(err)})`);
     } finally {
       if (!(await stillShared(share))) remove(share);
     }

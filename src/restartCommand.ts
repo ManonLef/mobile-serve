@@ -4,7 +4,7 @@ import * as fs from 'node:fs/promises';
 import * as path from 'node:path';
 import { execQuiet } from './exec.ts';
 import { log } from './log.ts';
-import { PACKAGE_MANAGERS, detectPackageManager, runScriptArgs } from './packageManager.ts';
+import { PACKAGE_MANAGERS, detectPackageManager, readPackageJson, runScriptArgs } from './packageManager.ts';
 import { isInside } from './paths.ts';
 import { ancestors, type ProcessInfo } from './processes.ts';
 import type { DetectedServer } from './servers.ts';
@@ -166,12 +166,9 @@ export async function findNetworkCommand(
   // A variable inherited from elsewhere (VS Code itself started by a script, say) points away from the server.
   if (!isInside(server.cwd, dir)) return skip(`its script comes from ${dir}, outside the folder it runs in`);
 
-  let scripts: unknown;
-  try {
-    scripts = JSON.parse(await fs.readFile(path.join(dir, 'package.json'), 'utf8')).scripts;
-  } catch {
-    return skip(`${path.join(dir, 'package.json')} can't be read`);
-  }
+  const packageJson = await readPackageJson(dir);
+  if (!packageJson) return skip(`${path.join(dir, 'package.json')} can't be read`);
+  const scripts = packageJson.scripts;
   if (!scripts || typeof scripts !== 'object' || !Object.hasOwn(scripts, env.event)) {
     return skip(`package.json has no “${env.event}” script any more`);
   }
