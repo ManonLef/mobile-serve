@@ -6,8 +6,13 @@
   "publisher": "ManonLef",
   "license": "MIT",
   "repository": { "type": "git", "url": "https://github.com/ManonLef/mobile-serve.git" },
-  "categories": ["Other"],
-  "keywords": ["mobile", "phone", "qr code", "lan", "dev server", "vite", "live server"],
+  "homepage": "https://github.com/ManonLef/mobile-serve#readme",
+  "bugs": { "url": "https://github.com/ManonLef/mobile-serve/issues" },
+  "categories": ["Testing", "Other"],
+  "keywords": [
+    "mobile", "phone", "qr code", "lan", "local network", "dev server", "vite", "nextjs", "live server",
+    "live reload", "responsive", "ios", "android", "safari"
+  ],
   "engines": { "vscode": "^1.82.0" },
   "main": "./dist/extension.js",
   "activationEvents": ["onStartupFinished"],
