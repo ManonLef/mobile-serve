@@ -27,12 +27,19 @@ export interface StartOption {
 
 export async function findStartOptions(): Promise<StartOption[]> {
   const options: StartOption[] = [];
-  for (const folder of vscode.workspace.workspaceFolders ?? []) {
-    if (!isLocalUri(folder.uri)) continue;
+  const folders = (vscode.workspace.workspaceFolders ?? []).filter(folder => isLocalUri(folder.uri));
+  const roots = new Set(folders.map(folder => folder.uri.fsPath));
+  const offered = new Set<string>();
+  for (const folder of folders) {
     const plans = await planStarts(folder.uri.fsPath);
     if (!plans.length) log.debug(`${folder.name}: no dev script Mobile Serve knows, nor a plain HTML page.`);
     for (const plan of plans) {
-      const name = path.relative(folder.uri.fsPath, plan.dir).split(path.sep).join('/') || folder.name;
+      const inside = path.relative(folder.uri.fsPath, plan.dir).split(path.sep).join('/');
+      // Offered once when workspace folders overlap, and under its own name when it's one of them.
+      if (offered.has(plan.dir) || (inside && roots.has(plan.dir))) continue;
+      offered.add(plan.dir);
+      // With several workspace folders, the path alone doesn't tell which one it's in.
+      const name = !inside ? folder.name : folders.length > 1 ? `${folder.name}/${inside}` : inside;
       log.debug(`${name}: ${describePlan(plan)}.`);
       // Running a script from package.json needs a trusted workspace; serving files doesn't.
       if (plan.kind === 'script' && !vscode.workspace.isTrusted) continue;
@@ -64,11 +71,13 @@ async function startStatic(folder: vscode.WorkspaceFolder, dir: string, port: nu
  * the phone will use. Resolves to the port, or undefined after telling the user why it isn't up.
  */
 async function startScript(
-  folder: vscode.WorkspaceFolder, plan: Extract<StartPlan, { kind: 'script' }>, port: number, host: string,
+  { folder, name }: StartOption, plan: Extract<StartPlan, { kind: 'script' }>, port: number, host: string,
 ): Promise<number | undefined> {
   // Quoted, or PowerShell drops the "--" that tells npm the rest is for the script.
   const args = scriptArgs(plan, port).map(arg => arg === '--' ? { value: arg, quoting: vscode.ShellQuoting.Strong } : arg);
-  const task = new vscode.Task({ type: TASK_TYPE, port }, folder, strings.start.taskName(plan.script), 'Mobile Serve',
+  // Projects below the folder are named, as several of them may run the same script.
+  const taskName = strings.start.taskName(plan.script, plan.dir === folder.uri.fsPath ? undefined : name);
+  const task = new vscode.Task({ type: TASK_TYPE, port }, folder, taskName, 'Mobile Serve',
     new vscode.ShellExecution(plan.packageManager, args, { cwd: plan.dir }));
   task.isBackground = true;
   task.presentationOptions = { reveal: vscode.TaskRevealKind.Always, focus: false, panel: vscode.TaskPanelKind.Dedicated };
@@ -110,15 +119,39 @@ async function startScript(
 
 // A folder being started, per folder: starting it again meanwhile would pick the same free port twice.
 const startOnce = singleFlight<string, number | undefined>();
+// The ports of starts that haven't recorded their share yet.
+const startingPorts = new Set<number>();
+// Ports are chosen one start at a time, or two projects started together would both take the same one.
+let portChoice: Promise<unknown> = Promise.resolve();
+
+// Whether a dev script was started on `port`. Nothing may listen there yet, so the port can look free.
+function givenToStart(port: number): boolean {
+  return startingPorts.has(port) || currentShares().some(s => s.kind === 'task' && s.port === port);
+}
+
+// The port to start the plan on, kept from other starts until startOption is done with it.
+function reservePort(plan: StartPlan): Promise<number> {
+  const choice = portChoice.then(async () => {
+    const port = await portFor(plan, givenToStart);
+    startingPorts.add(port);
+    return port;
+  });
+  portChoice = choice.catch(() => undefined);
+  return choice;
+}
 
 // Starts the folder for the phone (or finds it already started). Resolves to the port, or undefined if it didn't start.
 export async function startOption(option: StartOption, host: string): Promise<number | undefined> {
   // Joins a start that's still waiting for the server, rather than showing a URL that doesn't work yet.
   return startOnce(option.plan.dir, async () => {
     if (option.sharedPort !== undefined) return option.sharedPort;
-    const port = await portFor(option.plan);
-    return option.plan.kind === 'static'
-      ? startStatic(option.folder, option.plan.dir, port)
-      : startScript(option.folder, option.plan, port, host);
+    const port = await reservePort(option.plan);
+    try {
+      return await (option.plan.kind === 'static'
+        ? startStatic(option.folder, option.plan.dir, port)
+        : startScript(option, option.plan, port, host));
+    } finally {
+      startingPorts.delete(port);
+    }
   });
 }

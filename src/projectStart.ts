@@ -128,10 +128,11 @@ export async function isPortFree(port: number): Promise<boolean> {
   });
 }
 
-// `preferred` when it's free, else one of the ports after it, else any free port.
-export async function choosePort(preferred: number): Promise<number> {
+// `preferred` when it's free, else one of the ports after it, else any free port. `taken` tells
+// which ports to leave alone though nothing listens on them yet.
+export async function choosePort(preferred: number, taken: (port: number) => boolean = () => false): Promise<number> {
   for (let port = preferred; port < preferred + PORT_ATTEMPTS && port <= 65535; port++) {
-    if (await isPortFree(port)) return port;
+    if (!taken(port) && await isPortFree(port)) return port;
   }
   return new Promise((resolve, reject) => {
     const server = net.createServer();
@@ -144,9 +145,9 @@ export async function choosePort(preferred: number): Promise<number> {
 }
 
 // The port to start the plan on. Rejects when the port the script sets itself is taken.
-export async function portFor(plan: StartPlan): Promise<number> {
-  if (plan.kind === 'static') return choosePort(STATIC_PORT);
-  if (plan.fixedPort === undefined) return choosePort(plan.tool.defaultPort);
-  if (await isPortFree(plan.fixedPort)) return plan.fixedPort;
+export async function portFor(plan: StartPlan, taken: (port: number) => boolean = () => false): Promise<number> {
+  if (plan.kind === 'static') return choosePort(STATIC_PORT, taken);
+  if (plan.fixedPort === undefined) return choosePort(plan.tool.defaultPort, taken);
+  if (!taken(plan.fixedPort) && await isPortFree(plan.fixedPort)) return plan.fixedPort;
   throw new Error(strings.start.portTaken(plan.fixedPort, plan.script));
 }

@@ -4,7 +4,7 @@ import * as fs from 'node:fs/promises';
 import * as net from 'node:net';
 import * as os from 'node:os';
 import * as path from 'node:path';
-import { choosePort, isPortFree, planStart, planStarts, portFor, scriptArgs, type StartPlan } from '../src/projectStart.ts';
+import { STATIC_PORT, choosePort, isPortFree, planStart, planStarts, portFor, scriptArgs, type StartPlan } from '../src/projectStart.ts';
 
 // A temporary project folder with the given files, which may be in subfolders; `package.json` may be an object.
 async function project(files: Record<string, unknown>, run: (dir: string) => Promise<void>): Promise<void> {
@@ -141,4 +141,12 @@ test('choosePort skips a port that only listens on localhost', async () => {
   } finally {
     await new Promise(resolve => server.close(resolve));
   }
+});
+
+test('choosePort leaves a port alone that another start has taken', async () => {
+  const free = await choosePort(STATIC_PORT);
+  assert.notStrictEqual(await choosePort(free, port => port === free), free);
+  // A script that insists on that port can't start either.
+  const plan = { kind: 'script', dir: '/app', script: 'dev', packageManager: 'npm', fixedPort: free } as StartPlan;
+  await assert.rejects(portFor(plan, port => port === free), /already taken/);
 });
