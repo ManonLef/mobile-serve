@@ -11,6 +11,7 @@ import { registerSharing, onDidChangeShares, currentShares, closeAll, dropStoppe
 import { findStartOptions, startOption, type StartOption } from './start.ts';
 import { describePlan } from './projectStart.ts';
 import type { PageUrl } from './page.ts';
+import { strings } from './strings.ts';
 
 const DEFAULT_LIVE_SERVER_PORT = 5500;
 // Server detection relies on lsof, which Windows doesn't have.
@@ -25,7 +26,7 @@ let panelSharedPort: number | undefined;
 // Servers running from the open project, or a message saying why there are none. The message is
 // shown with "Enter a port", which still works.
 async function findWorkspaceServers(): Promise<{ servers: DevServer[]; problem?: string }> {
-  if (!CAN_DETECT_SERVERS) return { servers: [], problem: 'Detecting servers isn\'t supported on Windows' };
+  if (!CAN_DETECT_SERVERS) return { servers: [], problem: strings.picker.noDetectionOnWindows };
   // 0 means Live Server picks a random port, which can't be told apart from VS Code's other ports.
   const liveServerPort = vscode.workspace.getConfiguration('liveServer.settings').get<number>('port') ?? DEFAULT_LIVE_SERVER_PORT;
   try {
@@ -41,26 +42,26 @@ async function findWorkspaceServers(): Promise<{ servers: DevServer[]; problem?:
     // Servers Mobile Serve started are offered through their folder instead.
     const started = new Set(currentShares().filter(s => s.kind === 'task' || s.kind === 'static').map(s => s.port));
     const inProject = servers.filter(s => s.inProject && !started.has(s.port));
-    return { servers: inProject, problem: inProject.length ? undefined : 'No servers running in this project' };
+    return { servers: inProject, problem: inProject.length ? undefined : strings.picker.noServers };
   } catch (err) {
     // Starting the project or entering a port still works, so the list stays open.
     const message = describe(err);
     log.warn(`Couldn't look for running servers: ${message}`);
-    return { servers: [], problem: message === LSOF_MISSING ? message : `Couldn't look for running servers (${message})` };
+    return { servers: [], problem: message === LSOF_MISSING ? message : strings.picker.detectionFailed(message) };
   }
 }
 
 function startItem(option: StartOption): ServerItem {
   const { folder, plan, sharedPort } = option;
   if (sharedPort !== undefined) {
-    return { label: `$(device-mobile) ${folder.name}`, description: `Shared on port ${sharedPort}`, detail: 'Show the QR code again', start: option };
+    return { label: `$(device-mobile) ${folder.name}`, description: strings.picker.shared(sharedPort), detail: strings.picker.showAgain, start: option };
   }
   return {
-    label: `$(play) Start ${folder.name} for your phone`,
+    label: `$(play) ${strings.picker.start(folder.name)}`,
     description: describePlan(plan),
     detail: plan.kind === 'static'
-      ? 'Reloads your phone when you save, like Go Live'
-      : 'Runs in a terminal, reachable from your network',
+      ? strings.picker.staticDetail
+      : strings.picker.scriptDetail,
     start: option,
   };
 }
@@ -70,13 +71,13 @@ function serverItems(starts: StartOption[], servers: DevServer[], problem?: stri
   const toItem = (server: DevServer): ServerItem => ({
     label: `$(radio-tower) ${server.port}`,
     description: server.label,
-    detail: server.lanReachable ? 'Reachable from your network' : '$(warning) Listening on localhost only',
+    detail: server.lanReachable ? strings.picker.reachable : `$(warning) ${strings.picker.localhostOnly}`,
     server,
   });
 
   const items = starts.map(startItem);
-  if (servers.length) items.push(separator('Running in this project'), ...servers.map(toItem));
-  items.push(separator(''), { label: '$(edit) Enter a port…', detail: problem, manual: true });
+  if (servers.length) items.push(separator(strings.picker.running), ...servers.map(toItem));
+  items.push(separator(''), { label: `$(edit) ${strings.picker.enterPort}`, detail: problem, manual: true });
   return items;
 }
 
@@ -85,8 +86,8 @@ async function chooseItem(): Promise<ServerItem | undefined> {
   // Only reads package.json and index.html, so it's quick enough to wait for.
   const starts = await findStartOptions();
   const quickPick = vscode.window.createQuickPick<ServerItem>();
-  quickPick.title = 'What do you want to share on your network?';
-  quickPick.placeholder = 'Looking for running servers…';
+  quickPick.title = strings.picker.title;
+  quickPick.placeholder = strings.picker.looking;
   quickPick.busy = true;
   quickPick.items = serverItems(starts, []);
 
@@ -100,9 +101,9 @@ async function chooseItem(): Promise<ServerItem | undefined> {
   const filled = findWorkspaceServers().then(({ servers, problem }) => {
     if (!open) return;
     quickPick.items = serverItems(starts, servers, problem);
-    quickPick.placeholder = starts.length ? 'Start this project for your phone, or pick a running server'
-      : servers.length ? 'Pick a running server, or enter a port'
-      : 'Enter the port of a running server';
+    quickPick.placeholder = starts.length ? strings.picker.startOrPick
+      : servers.length ? strings.picker.pickOrEnterPort
+      : strings.picker.enterRunningPort;
     quickPick.busy = false;
   });
   try {
@@ -121,21 +122,21 @@ async function pickTarget(): Promise<Target | undefined> {
   if (!choice.manual) return choice.server && { server: choice.server };
 
   const value = await vscode.window.showInputBox({
-    prompt: 'Port number',
+    prompt: strings.picker.portPrompt,
     validateInput: text => {
       const port = Number(text);
-      return /^\d+$/.test(text) && port >= 1 && port <= 65535 ? null : 'Enter a port between 1 and 65535, like 4200';
+      return /^\d+$/.test(text) && port >= 1 && port <= 65535 ? null : strings.picker.portInvalid;
     },
   });
   // Nothing is known about a port typed in by hand, so lanReachable stays undefined.
-  return value ? { server: { port: Number(value), label: 'Manual', kind: 'manual' } } : undefined;
+  return value ? { server: { port: Number(value), label: strings.picker.manual, kind: 'manual' } } : undefined;
 }
 
 async function show(): Promise<void> {
   const addresses = await getLanAddresses();
   if (!addresses.length) {
     log.warn('No network address found.');
-    vscode.window.showErrorMessage('No network connection found. Connect to Wi-Fi and try again.');
+    vscode.window.showErrorMessage(strings.errors.noNetwork);
     return;
   }
 
@@ -170,17 +171,14 @@ function updateStatusBar(item: vscode.StatusBarItem): void {
   // Hides "Stop Sharing" from the Command Palette when there's nothing to stop.
   void vscode.commands.executeCommand('setContext', 'mobileServe.sharing', ports.length > 0);
   if (!ports.length) {
-    item.text = '$(device-mobile) Mobile';
-    item.tooltip = 'Show a QR code to open a local dev server on your phone';
+    item.text = `$(device-mobile) ${strings.statusBar.show}`;
+    item.tooltip = strings.statusBar.showTooltip;
     item.command = SHOW_COMMAND;
     item.backgroundColor = undefined;
     return;
   }
-  const list = ports.join(', ');
-  item.text = `$(device-mobile) Close Mobile: ${list}`;
-  const [noun, verb, pronoun] = ports.length > 1 ? ['Ports', 'are', 'them'] : ['Port', 'is', 'it'];
-  item.tooltip = `${noun} ${list} ${verb} reachable from every device on your network. Click to stop sharing ${pronoun}.\n\n` +
-    'To show the QR code again, run “Mobile Serve: Show Phone URL”.';
+  item.text = `$(device-mobile) ${strings.statusBar.close(ports)}`;
+  item.tooltip = strings.statusBar.closeTooltip(ports);
   item.command = STOP_COMMAND;
   item.backgroundColor = new vscode.ThemeColor('statusBarItem.warningBackground');
 }
@@ -191,8 +189,8 @@ function reportingErrors(run: () => Promise<void>): () => Promise<void> {
       await run();
     } catch (err) {
       log.error(err instanceof Error ? err : describe(err));
-      const showLog = 'Show Log';
-      if (await vscode.window.showErrorMessage(`Mobile Serve: ${describe(err)}`, showLog) === showLog) {
+      const showLog = strings.errors.showLog;
+      if (await vscode.window.showErrorMessage(strings.errors.failed(describe(err)), showLog) === showLog) {
         await vscode.commands.executeCommand(SHOW_LOG_COMMAND);
       }
     }
@@ -225,7 +223,7 @@ export function activate(context: vscode.ExtensionContext): void {
     vscode.commands.registerCommand(SHOW_COMMAND, reportingErrors(show)),
     vscode.commands.registerCommand(STOP_COMMAND, reportingErrors(async () => {
       if (!currentShares().length) {
-        vscode.window.showInformationMessage('Mobile Serve isn\'t sharing anything on your network.');
+        vscode.window.showInformationMessage(strings.errors.notSharing);
         return;
       }
       // The URLs stop working, so the panel goes too.

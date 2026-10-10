@@ -4,26 +4,23 @@ import { isDetected, type DevServer } from './servers.ts';
 import { findNetworkCommand } from './restartCommand.ts';
 import { restartOnNetwork } from './restart.ts';
 import { addShare } from './sharing.ts';
+import { strings } from './strings.ts';
 
-const SHOW_ANYWAY = 'Show Anyway';
+const SHOW_ANYWAY = strings.makeReachable.showAnyway;
 
-async function fixLiveServer(server: DevServer, intro: string): Promise<number | undefined> {
-  const message = `${intro} Live Server needs its host setting changed to 0.0.0.0.`;
+async function fixLiveServer(server: DevServer): Promise<number | undefined> {
+  const message = strings.makeReachable.liveServer;
   // Only ever change it for a workspace: a global 0.0.0.0 would expose every Live Server session, on every network.
   if (!vscode.workspace.workspaceFolders) {
     const answer = await vscode.window.showWarningMessage(message,
-      { modal: true, detail: 'Open the folder you\'re serving and try again, so the setting can be changed for that workspace only.' },
+      { modal: true, detail: strings.makeReachable.openFolderDetail },
       SHOW_ANYWAY);
     return answer === SHOW_ANYWAY ? server.port : undefined;
   }
 
-  const fix = 'Fix Live Server Setting';
+  const fix = strings.makeReachable.fixLiveServer;
   const answer = await vscode.window.showWarningMessage(message,
-    {
-      modal: true,
-      detail: 'This makes Live Server reachable from any device on your network for this workspace. ' +
-        'The setting is saved in the workspace settings (usually .vscode/settings.json), so take care not to commit it.',
-    },
+    { modal: true, detail: strings.makeReachable.fixLiveServerDetail },
     fix, SHOW_ANYWAY);
   if (answer === fix) {
     const config = vscode.workspace.getConfiguration('liveServer.settings');
@@ -31,7 +28,7 @@ async function fixLiveServer(server: DevServer, intro: string): Promise<number |
     await config.update('host', '0.0.0.0', vscode.ConfigurationTarget.Workspace);
     // Remembered so "Close Mobile" can put it back, unless it already was 0.0.0.0 by the user's choice.
     if (previousHost !== '0.0.0.0') addShare({ kind: 'liveServer', port: server.port, previousHost });
-    vscode.window.showInformationMessage('Live Server host set to 0.0.0.0. Stop and restart Go Live, then try again.');
+    vscode.window.showInformationMessage(strings.makeReachable.liveServerFixed);
     return;
   }
   return answer === SHOW_ANYWAY ? server.port : undefined;
@@ -39,17 +36,16 @@ async function fixLiveServer(server: DevServer, intro: string): Promise<number |
 
 // Explains why the server can't be reached and offers to fix it. Resolves to the port to show, or undefined to stop.
 export async function makeReachable(server: DevServer): Promise<number | undefined> {
-  const intro = 'This server only listens on localhost, so your phone can\'t reach it.';
-  if (server.kind === 'liveServer') return fixLiveServer(server, intro);
+  if (server.kind === 'liveServer') return fixLiveServer(server);
 
   // Restarting runs a script from the project's package.json, so only offer it in trusted workspaces.
   const detected = isDetected(server) ? server : undefined;
   const restart = detected && vscode.workspace.isTrusted ? await findNetworkCommand(detected) : undefined;
   if (detected && restart) {
-    const restartServer = 'Restart Server';
+    const restartServer = strings.makeReachable.restartServer;
     const answer = await vscode.window.showWarningMessage(
-      `${intro} Restart it with “${restart.command}” to make it reachable.`,
-      { modal: true, detail: 'Restarting stops the current server, as Ctrl+C in its terminal would, and starts it again with that command.' },
+      strings.makeReachable.restartWith(restart.command),
+      { modal: true, detail: strings.makeReachable.restartDetail },
       restartServer, SHOW_ANYWAY);
     if (answer === restartServer) {
       // Remembered so "Close Mobile" can restart it for this computer only.
@@ -60,9 +56,6 @@ export async function makeReachable(server: DevServer): Promise<number | undefin
     return answer === SHOW_ANYWAY ? server.port : undefined;
   }
 
-  const answer = await vscode.window.showWarningMessage(
-    `${intro} Restart it bound to all interfaces, e.g. “npm run dev -- --host” (Vite), ` +
-    '“ng serve --host 0.0.0.0” or “python3 -m http.server --bind 0.0.0.0”.',
-    { modal: true }, SHOW_ANYWAY);
+  const answer = await vscode.window.showWarningMessage(strings.makeReachable.restartByHand, { modal: true }, SHOW_ANYWAY);
   return answer === SHOW_ANYWAY ? server.port : undefined;
 }

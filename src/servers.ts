@@ -1,6 +1,7 @@
 // Finds dev servers listening on this machine, using lsof (macOS and Linux only).
 import { execOutput, type ExecResult } from './exec.ts';
 import { isInside } from './paths.ts';
+import { strings } from './strings.ts';
 
 // Process names that are likely to be a dev server. Compared after dropping a trailing
 // version number, so python3.12 and php8.2 match too.
@@ -16,9 +17,7 @@ const UNREACHABLE_IPV4 = /^(127\.|169\.254\.)/;
 // Ports below this are system services, not dev servers.
 const MIN_DEV_PORT = 1024;
 
-export const LSOF_MISSING = process.platform === 'linux'
-  ? 'lsof isn\'t installed, so running servers can\'t be detected. Install it, for example with `sudo apt install lsof`.'
-  : 'lsof isn\'t available, so running servers can\'t be detected.';
+export const LSOF_MISSING = process.platform === 'linux' ? strings.picker.lsofNotInstalled : strings.picker.lsofUnavailable;
 
 export interface DevServer {
   port: number;

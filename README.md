@@ -20,7 +20,7 @@ internet. The QR code is made on your computer too.
 ## Instructions
 
 1. Click **📱 Mobile** in the status bar, or run **Mobile Serve: Show Phone URL** from the Command Palette.
-2. Pick **Start ‹your project› for your phone** (see below). If your dev server is already running,
+2. Pick **Start ‹your project› on your network** (see below). If your dev server is already running,
    you can pick it under **Running in this project** instead, or enter its port.
 3. Scan the QR code with the device's camera, or type in the URL. The device has to be on the same
    network as your computer.

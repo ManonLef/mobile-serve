@@ -5,6 +5,7 @@ import { listProcesses, ancestors, serverJob, unrelatedListeners } from './proce
 import { findDevServers, listeningPids, getWorkingDirs, pickRestartedServer, type DetectedServer } from './servers.ts';
 import { runningSameScript } from './restartCommand.ts';
 import { waitFor } from './wait.ts';
+import { strings } from './strings.ts';
 
 const STOP_TIMEOUT_MS = 5000;
 // How long the progress notification waits for the restarted server.
@@ -14,7 +15,7 @@ const START_WATCH_MS = 5 * 60000;
 // How often to look while the notification waits, and after it gave up.
 const START_POLL_MS = 500;
 const SLOW_POLL_MS = 5000;
-const TERMINAL_NAME = 'Dev server (phone)';
+const TERMINAL_NAME = strings.restart.terminalName;
 
 export interface Run {
   command: string;
@@ -49,7 +50,7 @@ async function stopAndRun(
   server: { pid: number; port: number }, run: Run, token?: vscode.CancellationToken,
 ): Promise<vscode.Terminal | undefined> {
   if (restarting.has(server.port)) {
-    vscode.window.showInformationMessage(`The server on port ${server.port} is already restarting.`);
+    vscode.window.showInformationMessage(strings.restart.alreadyRestarting(server.port));
     return;
   }
   restarting.add(server.port);
@@ -68,7 +69,7 @@ async function stopAndRunOnce(
   const listening = await listeningPids(server.port);
   if (!listening.includes(server.pid)) {
     log.warn(`Not restarting port ${server.port}: pid ${server.pid} no longer listens on it (${listening.join(', ') || 'nothing'} does).`);
-    vscode.window.showErrorMessage(`The server on port ${server.port} has already stopped. Start it with “${run.command}”.`);
+    vscode.window.showErrorMessage(strings.restart.alreadyStopped(server.port, run.command));
     return;
   }
   // Stop what started the server too (npm, a watcher…), the processes Ctrl+C would stop, so nothing starts it again.
@@ -80,8 +81,7 @@ async function stopAndRunOnce(
   log.info(`Port ${server.port}: stopping pids ${job.pids.join(', ')}, started from ${job.shellPid ? `shell ${job.shellPid}` : 'no shell found'}.`);
   if (others.length) {
     log.warn(`Not restarting port ${server.port}: pids ${others.join(', ')} listen on it too.`);
-    vscode.window.showErrorMessage(`Port ${server.port} is also used by another process (pid ${others.join(', ')}). ` +
-      `Stop the server yourself and run “${run.command}”.`);
+    vscode.window.showErrorMessage(strings.restart.portUsedByOthers(server.port, others, run.command));
     return;
   }
   // Last point where cancelling leaves everything as it was.
@@ -102,8 +102,7 @@ async function stopAndRunOnce(
     const stopped = await waitFor(async () => (await listeningPids(server.port)).length === 0, STOP_TIMEOUT_MS);
     if (!stopped) {
       log.warn(`Port ${server.port} is still in use ${STOP_TIMEOUT_MS / 1000} seconds after stopping the server.`);
-      vscode.window.showErrorMessage(`Port ${server.port} is still in use. Something may have restarted the server; ` +
-        `stop it yourself and run “${run.command}”.`);
+      vscode.window.showErrorMessage(strings.restart.stillInUse(server.port, run.command));
       return;
     }
     const terminal = await findServerTerminal(job.shellPid, run.dir)
@@ -115,7 +114,7 @@ async function stopAndRunOnce(
   } catch (err) {
     const reason = describe(err);
     log.error(`Port ${server.port} was stopped, but starting it again failed: ${reason}`);
-    vscode.window.showErrorMessage(`The server was stopped, but starting it again failed: ${reason}. Start it with “${run.command}”.`);
+    vscode.window.showErrorMessage(strings.restart.startFailed(reason, run.command));
     return;
   }
 }
@@ -130,7 +129,7 @@ export function restartOnNetwork(
 ): Thenable<DetectedServer | undefined> {
   return vscode.window.withProgress({
     location: vscode.ProgressLocation.Notification,
-    title: `Restarting the dev server with “${run.command}”…`,
+    title: strings.restart.restarting(run.command),
     cancellable: true,
   }, async (_progress, token) => {
     // Servers already running (an API next to the front end, say) mustn't be mistaken for the restarted one.
@@ -161,8 +160,7 @@ export function restartOnNetwork(
       const started = await Promise.race([watch, gaveUp]);
       if (started === 'gave up' && token.isCancellationRequested) return;
       if (!started || started === 'gave up') {
-        vscode.window.showErrorMessage(`The dev server didn't become reachable within ${START_TIMEOUT_MS / 1000} seconds. ` +
-          `Check the “${terminal.name}” terminal.`);
+        vscode.window.showErrorMessage(strings.restart.notReachable(START_TIMEOUT_MS / 1000, terminal.name));
         return;
       }
       return started;
@@ -177,6 +175,6 @@ export function restartOnNetwork(
 export function restartLocally(server: { pid: number; port: number }, run: Run): Thenable<boolean> {
   return vscode.window.withProgress({
     location: vscode.ProgressLocation.Notification,
-    title: `Restarting the dev server with “${run.command}”, for this computer only…`,
+    title: strings.restart.restartingLocally(run.command),
   }, async () => !!(await stopAndRun(server, run)));
 }

@@ -4,6 +4,9 @@
 
 - Live reload no longer breaks a plain HTML page that has `</body>` inside a script.
 - Opening a folder without the trailing slash always redirects to the same server.
+- The picker, messages and QR code page say "your network" or "other devices" where they said
+  "your phone", since any device can open the page. **Start ‹folder› for your phone** is now
+  **Start ‹folder› on your network**.
 
 ## 0.2.0 - 2026-10-10
 

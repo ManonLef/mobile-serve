@@ -10,6 +10,7 @@ import { singleFlight } from './singleFlight.ts';
 import { startStaticServer } from './staticServer.ts';
 import { waitForStart } from './wait.ts';
 import { TASK_TYPE, addStaticShare, addTaskShare, currentShares, isLocalUri, isOurTask } from './sharing.ts';
+import { strings } from './strings.ts';
 
 const POLL_INTERVAL_MS = 500;
 // Some dev servers (Angular's, say) take a while to compile before they listen.
@@ -61,7 +62,7 @@ async function startScript(
 ): Promise<number | undefined> {
   // Quoted, or PowerShell drops the "--" that tells npm the rest is for the script.
   const args = scriptArgs(plan, port).map(arg => arg === '--' ? { value: arg, quoting: vscode.ShellQuoting.Strong } : arg);
-  const task = new vscode.Task({ type: TASK_TYPE, port }, folder, `${plan.script} (phone)`, 'Mobile Serve',
+  const task = new vscode.Task({ type: TASK_TYPE, port }, folder, strings.start.taskName(plan.script), 'Mobile Serve',
     new vscode.ShellExecution(plan.packageManager, args, { cwd: plan.dir }));
   task.isBackground = true;
   task.presentationOptions = { reveal: vscode.TaskRevealKind.Always, focus: false, panel: vscode.TaskPanelKind.Dedicated };
@@ -80,7 +81,7 @@ async function startScript(
 
     return await vscode.window.withProgress({
       location: vscode.ProgressLocation.Notification,
-      title: `Starting “${plan.packageManager} run ${plan.script}” for your phone…`,
+      title: strings.start.starting(`${plan.packageManager} run ${plan.script}`),
       cancellable: true,
     }, async (_progress, token) => {
       const outcome = await waitForStart(() => canConnect(host, port),
@@ -90,10 +91,9 @@ async function startScript(
       if (outcome === 'cancelled') {
         execution.terminate();
       } else if (outcome === 'ended') {
-        vscode.window.showErrorMessage(`The dev server stopped before your phone could reach it. Check the “${task.name}” terminal.`);
+        vscode.window.showErrorMessage(strings.start.stoppedEarly(task.name));
       } else if (outcome === 'timedOut') {
-        vscode.window.showErrorMessage(`The dev server isn't reachable after ${START_TIMEOUT_MS / 1000} seconds. ` +
-          `It keeps starting in the “${task.name}” terminal: show the phone URL again once it's up.`);
+        vscode.window.showErrorMessage(strings.start.notReachableYet(START_TIMEOUT_MS / 1000, task.name));
       }
       return undefined;
     });

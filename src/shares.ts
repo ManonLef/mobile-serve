@@ -2,6 +2,7 @@
 // VS Code: what to pick up after a window reload, and how Close Mobile goes through it all.
 // sharing.ts does the closing and checking itself.
 import { describe } from './log.ts';
+import { strings } from './strings.ts';
 
 export type Share =
   // A dev server Mobile Serve restarted with its host flag. Closing restarts it with `localCommand`.
@@ -107,12 +108,12 @@ export async function closeShares(shares: readonly Share[], { close, stillShared
     try {
       await close(share);
     } catch (err) {
-      failures.push(`port ${share.port} (${describe(err)})`);
+      failures.push(strings.close.failedPort(share.port, describe(err)));
     } finally {
       if (!(await stillShared(share))) remove(share);
     }
   }
   if (failures.length) {
-    throw new Error(`Couldn't stop sharing ${failures.join(', ')}. Click Close Mobile to try again.`);
+    throw new Error(strings.close.failed(failures));
   }
 }
