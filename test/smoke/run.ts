@@ -46,7 +46,7 @@ async function registersItsCommands(extension: vscode.Extension<unknown>): Promi
   for (const command of contributed) assert.ok(registered.has(command), `${command} isn't registered`);
 }
 
-// What clicking Mobile and then "Start ‹folder› for your phone" does.
+// What clicking Mobile and then "Start ‹folder› on your network" does.
 async function servesThePlainHtmlFolder(): Promise<void> {
   let shown = false;
   const show = Promise.resolve(vscode.commands.executeCommand('mobileServe.show')).finally(() => shown = true);

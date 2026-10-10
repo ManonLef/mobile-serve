@@ -62,7 +62,7 @@ async function startScript(
 ): Promise<number | undefined> {
   // Quoted, or PowerShell drops the "--" that tells npm the rest is for the script.
   const args = scriptArgs(plan, port).map(arg => arg === '--' ? { value: arg, quoting: vscode.ShellQuoting.Strong } : arg);
-  const task = new vscode.Task({ type: TASK_TYPE, port }, folder, `${plan.script} (phone)`, 'Mobile Serve',
+  const task = new vscode.Task({ type: TASK_TYPE, port }, folder, strings.start.taskName(plan.script), 'Mobile Serve',
     new vscode.ShellExecution(plan.packageManager, args, { cwd: plan.dir }));
   task.isBackground = true;
   task.presentationOptions = { reveal: vscode.TaskRevealKind.Always, focus: false, panel: vscode.TaskPanelKind.Dedicated };

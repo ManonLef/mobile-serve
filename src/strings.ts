@@ -3,18 +3,18 @@
 // VS Code, so any module can use it. Log messages are for bug reports and stay where they're
 // logged; command titles are in package.json.
 
-const LOCALHOST_ONLY = 'This server only listens on localhost, so your phone can\'t reach it.';
+const LOCALHOST_ONLY = 'This server only listens on localhost, so other devices on your network can\'t reach it.';
 
 export const strings = {
   picker: {
     title: 'What do you want to share on your network?',
     looking: 'Looking for running servers…',
-    startOrPick: 'Start this project for your phone, or pick a running server',
+    startOrPick: 'Start this project on your network, or pick a running server',
     pickOrEnterPort: 'Pick a running server, or enter a port',
     enterRunningPort: 'Enter the port of a running server',
-    start: (folder: string) => `Start ${folder} for your phone`,
+    start: (folder: string) => `Start ${folder} on your network`,
     staticPlan: 'Serves the folder\'s HTML, CSS and JavaScript',
-    staticDetail: 'Reloads your phone when you save, like Go Live',
+    staticDetail: 'Reloads the page when you save, like Go Live',
     scriptDetail: 'Runs in a terminal, reachable from your network',
     shared: (port: number) => `Shared on port ${port}`,
     showAgain: 'Show the QR code again',
@@ -34,7 +34,7 @@ export const strings = {
 
   statusBar: {
     show: 'Mobile',
-    showTooltip: 'Show a QR code to open a local dev server on your phone',
+    showTooltip: 'Show a QR code to open a local dev server on another device',
     close: (ports: number[]) => `Close Mobile: ${ports.join(', ')}`,
     closeTooltip: (ports: number[]) =>
       (ports.length > 1
@@ -68,8 +68,10 @@ export const strings = {
   },
 
   start: {
-    starting: (command: string) => `Starting “${command}” for your phone…`,
-    stoppedEarly: (terminal: string) => `The dev server stopped before your phone could reach it. Check the “${terminal}” terminal.`,
+    // The name of the terminal the dev script runs in.
+    taskName: (script: string) => `${script} (network)`,
+    starting: (command: string) => `Starting “${command}” on your network…`,
+    stoppedEarly: (terminal: string) => `The dev server stopped before other devices could reach it. Check the “${terminal}” terminal.`,
     notReachableYet: (seconds: number, terminal: string) => `The dev server isn't reachable after ${seconds} seconds. ` +
       `It keeps starting in the “${terminal}” terminal: show the phone URL again once it's up.`,
     portTaken: (port: number, script: string) =>
@@ -77,7 +79,7 @@ export const strings = {
   },
 
   restart: {
-    terminalName: 'Dev server (phone)',
+    terminalName: 'Dev server (network)',
     restarting: (command: string) => `Restarting the dev server with “${command}”…`,
     restartingLocally: (command: string) => `Restarting the dev server with “${command}”, for this computer only…`,
     alreadyRestarting: (port: number) => `The server on port ${port} is already restarting.`,
@@ -110,14 +112,14 @@ export const strings = {
     copyUrl: 'Copy URL',
     listening: '✓ The server is listening on this address.',
     notListening: '⚠ Couldn\'t connect on this address. Is the server running and bound to 0.0.0.0?',
-    https: 'The server uses HTTPS. If its certificate is self-signed, your phone will ask you to accept it.',
+    https: 'The server uses HTTPS. If its certificate is self-signed, the other device will ask you to accept it.',
     remote: (remoteName: string) => `⚠ VS Code is connected to a remote environment (${remoteName}). ` +
-      'These addresses belong to that machine, which your phone may not be able to reach.',
+      'These addresses belong to that machine, which devices on your network may not be able to reach.',
     sharedByMobileServe: '⚠ Every device on this network can open this server while it\'s shared.',
     stopSharing: 'Stop Sharing',
     sharedByOther: '⚠ Every device on this network can open this server. Mobile Serve didn\'t set that up, ' +
       'so stop the server yourself when you\'re done.',
-    hint: 'Scan with your phone\'s camera. Your phone must be on the same Wi-Fi network. ' +
+    hint: 'Scan the QR code with the device\'s camera, or type in the URL. The device has to be on the same network as your computer. ' +
       'If the page doesn\'t load, allow incoming connections in your computer\'s firewall, and avoid guest ' +
       'networks, which often block devices from reaching each other.',
     otherAddresses: 'Other addresses:',

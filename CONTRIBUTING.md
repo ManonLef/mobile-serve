@@ -5,7 +5,7 @@ Needs Node.js 22.18 or newer. Run `npm install`, then:
 - **F5** builds the extension and starts a VS Code window with it loaded.
 - `npm test` runs the unit tests. Node runs the TypeScript files directly.
 - The smoke test runs the extension in a real VS Code: the current release and the oldest one
-  `engines` allows (1.82). It opens a plain HTML folder, picks **Start ‹folder› for your phone**,
+  `engines` allows (1.82). It opens a plain HTML folder, picks **Start ‹folder› on your network**,
   checks the page is served with live reload, and that **Stop Sharing** stops it. It runs on every
   pull request. To try other versions, use **Actions → Smoke test → Run workflow**, or
   `gh workflow run smoke.yml --ref <branch> -f versions="stable 1.90.0"`.
