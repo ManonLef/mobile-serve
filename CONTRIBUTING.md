@@ -6,10 +6,9 @@ Needs Node.js 22.18 or newer. Run `npm install`, then:
 - `npm test` runs the unit tests. Node runs the TypeScript files directly.
 - The smoke test runs the extension in a real VS Code: the current release and the oldest one
   `engines` allows (1.82). It opens a plain HTML folder, picks **Start ‹folder› for your phone**,
-  checks the page is served with live reload, and that **Stop Sharing** stops it. It isn't part of CI,
-  since it downloads VS Code each time: add the `smoke-test` label to a pull request to run it there
-  (remove and add the label again to rerun). To try other versions, use **Actions → Smoke test → Run
-  workflow**, or `gh workflow run smoke.yml --ref <branch> -f versions="stable 1.90.0"`.
+  checks the page is served with live reload, and that **Stop Sharing** stops it. It runs on every
+  pull request. To try other versions, use **Actions → Smoke test → Run workflow**, or
+  `gh workflow run smoke.yml --ref <branch> -f versions="stable 1.90.0"`.
   `npm run test:vscode` runs it locally, but downloads about 1.2 GB into `.vscode-test/`, which you
   can delete afterwards.
 - `npm run check` type-checks the code.

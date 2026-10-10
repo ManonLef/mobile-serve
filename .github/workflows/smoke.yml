@@ -1,11 +1,9 @@
-# Runs the smoke test in real VS Code (see test/smoke/run.ts) on every platform. Only when asked,
-# since it downloads VS Code each time: add the smoke-test label to a pull request (remove and add it
-# again to rerun), or use Actions → Smoke test → Run workflow to try other VS Code versions.
+# Runs the smoke test in real VS Code (see test/smoke/run.ts) on every platform, for every pull
+# request. Use Actions → Smoke test → Run workflow to try other VS Code versions.
 name: Smoke test
 
 on:
   pull_request:
-    types: [labeled]
   workflow_dispatch:
     inputs:
       versions:
@@ -18,8 +16,6 @@ permissions:
 
 jobs:
   smoke:
-    # Adding any other label doesn't run it.
-    if: github.event_name == 'workflow_dispatch' || github.event.label.name == 'smoke-test'
     strategy:
       # One platform failing shouldn't hide whether the others pass.
       fail-fast: false
