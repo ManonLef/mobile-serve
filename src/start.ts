@@ -4,7 +4,7 @@ import * as path from 'node:path';
 import * as vscode from 'vscode';
 import { log } from './log.ts';
 import { canConnect } from './network.ts';
-import { describePlan, planStart, portFor, scriptArgs, type StartPlan } from './projectStart.ts';
+import { describePlan, planStarts, portFor, scriptArgs, type StartPlan } from './projectStart.ts';
 import { realPath } from './paths.ts';
 import { singleFlight } from './singleFlight.ts';
 import { startStaticServer } from './staticServer.ts';
@@ -18,6 +18,8 @@ const START_TIMEOUT_MS = 60000;
 
 export interface StartOption {
   folder: vscode.WorkspaceFolder;
+  // What to call it: the workspace folder's name, or the path inside it of the project that's started.
+  name: string;
   plan: StartPlan;
   // Set when the folder is already started for the phone, on this port.
   sharedPort?: number;
@@ -27,12 +29,16 @@ export async function findStartOptions(): Promise<StartOption[]> {
   const options: StartOption[] = [];
   for (const folder of vscode.workspace.workspaceFolders ?? []) {
     if (!isLocalUri(folder.uri)) continue;
-    const plan = await planStart(folder.uri.fsPath);
-    log.debug(`${folder.name}: ${plan ? describePlan(plan) : 'no dev script Mobile Serve knows, nor a plain HTML page'}.`);
-    // Running a script from package.json needs a trusted workspace; serving files doesn't.
-    if (!plan || (plan.kind === 'script' && !vscode.workspace.isTrusted)) continue;
-    const shared = currentShares().find(s => (s.kind === 'task' || s.kind === 'static') && s.dir === plan.dir);
-    options.push({ folder, plan, sharedPort: shared?.port });
+    const plans = await planStarts(folder.uri.fsPath);
+    if (!plans.length) log.debug(`${folder.name}: no dev script Mobile Serve knows, nor a plain HTML page.`);
+    for (const plan of plans) {
+      const name = path.relative(folder.uri.fsPath, plan.dir).split(path.sep).join('/') || folder.name;
+      log.debug(`${name}: ${describePlan(plan)}.`);
+      // Running a script from package.json needs a trusted workspace; serving files doesn't.
+      if (plan.kind === 'script' && !vscode.workspace.isTrusted) continue;
+      const shared = currentShares().find(s => (s.kind === 'task' || s.kind === 'static') && s.dir === plan.dir);
+      options.push({ folder, name, plan, sharedPort: shared?.port });
+    }
   }
   return options;
 }

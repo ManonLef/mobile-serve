@@ -21,6 +21,13 @@ const SETS_PORT = /(?<![\w-])(?:--port|-p)(?:[ =](\d+))?(?![\w-])/;
 export const STATIC_PORT = 5600;
 // How many ports after the preferred one to try before taking any free one.
 const PORT_ATTEMPTS = 20;
+// How far below a folder to look for projects: far enough for a monorepo's apps/web or packages/site.
+const NESTED_DEPTH = 2;
+// Dependencies and build output, which are never the user's own project.
+const SKIPPED_FOLDERS = new Set(['node_modules', 'bower_components', 'vendor', 'dist', 'build', 'out', 'target', 'bin', 'obj', 'coverage']);
+// Keeps the picker quick and short in a folder with a great many subfolders or projects.
+const MAX_FOLDERS_SEARCHED = 200;
+const MAX_NESTED_PLANS = 5;
 
 export type StartPlan =
   // Runs the package.json script in `dir` (see scriptArgs).
@@ -57,6 +64,46 @@ export async function planStart(dir: string): Promise<StartPlan | undefined> {
   const bodies = names.map(name => (scripts as Record<string, unknown>)[name]);
   if (!bodies.every(body => typeof body === 'string' && STATIC_SERVER_SCRIPT.test(body.trim()))) return undefined;
   return await exists(path.join(dir, 'index.html')) ? { kind: 'static', dir } : undefined;
+}
+
+// The folders in `dir` a project could be in, in alphabetical order. Symlinks aren't followed.
+async function subfolders(dir: string): Promise<string[]> {
+  try {
+    const entries = await fs.readdir(dir, { withFileTypes: true });
+    return entries
+      .filter(entry => entry.isDirectory() && !entry.name.startsWith('.') && !SKIPPED_FOLDERS.has(entry.name))
+      .map(entry => path.join(dir, entry.name))
+      .sort();
+  } catch {
+    return [];
+  }
+}
+
+/**
+ * How to start `dir`, or, when it can't be started itself, the projects with a dev script in the
+ * folders below it (a monorepo's apps/web, say). Plain HTML only counts in `dir` itself: a
+ * subfolder with an index.html is as likely to be documentation or a test fixture.
+ */
+export async function planStarts(dir: string): Promise<StartPlan[]> {
+  const own = await planStart(dir);
+  if (own) return [own];
+  const plans: StartPlan[] = [];
+  let searched = 0;
+  let level = [dir];
+  for (let depth = 0; depth < NESTED_DEPTH; depth++) {
+    const next: string[] = [];
+    for (const parent of level) {
+      for (const folder of await subfolders(parent)) {
+        if (plans.length === MAX_NESTED_PLANS || searched++ === MAX_FOLDERS_SEARCHED) return plans;
+        const plan = await planStart(folder);
+        // A project isn't looked into any further: what's below it is its own.
+        if (plan?.kind === 'script') plans.push(plan);
+        else next.push(folder);
+      }
+    }
+    level = next;
+  }
+  return plans;
 }
 
 // The arguments to give the package manager so the script listens on the network, on `port`.
