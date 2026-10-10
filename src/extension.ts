@@ -85,7 +85,7 @@ async function chooseItem(): Promise<ServerItem | undefined> {
   // Only reads package.json and index.html, so it's quick enough to wait for.
   const starts = await findStartOptions();
   const quickPick = vscode.window.createQuickPick<ServerItem>();
-  quickPick.title = 'What do you want on your phone?';
+  quickPick.title = 'What do you want to share on your network?';
   quickPick.placeholder = 'Looking for running servers…';
   quickPick.busy = true;
   quickPick.items = serverItems(starts, []);
