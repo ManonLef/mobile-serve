@@ -115,12 +115,16 @@ test('offers the projects below a folder that can\'t be started itself', async (
   await project({ 'apps/web/package.json': vite, 'site/package.json': vite, 'site/examples/package.json': vite }, async dir => {
     assert.deepStrictEqual(await startedIn(dir), ['site', 'apps/web']);
   });
-  // Not dependencies, build output, hidden folders, anything deeper, or a subfolder's plain HTML.
+  // Not dependencies, dist, hidden folders, anything deeper, or a subfolder's plain HTML.
   await project({
-    'node_modules/demo/package.json': vite, 'dist/package.json': vite, '.cache/package.json': vite,
-    'a/b/c/package.json': vite, 'docs/index.html': '',
+    'node_modules/demo/package.json': vite, 'bower_components/demo/package.json': vite, 'vendor/demo/package.json': vite,
+    'dist/package.json': vite, '.cache/package.json': vite, 'a/b/c/package.json': vite, 'docs/index.html': '',
   }, async dir => {
     assert.deepStrictEqual(await startedIn(dir), []);
+  });
+  // A project may be in a folder named like build output.
+  await project({ 'build/package.json': vite, 'tools/bin/package.json': vite, 'target/classes/App.class': '' }, async dir => {
+    assert.deepStrictEqual(await startedIn(dir), ['build', 'tools/bin']);
   });
 });
 
