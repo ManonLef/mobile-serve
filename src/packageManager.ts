@@ -11,7 +11,6 @@ const LOCKFILES = [
   ['package-lock.json', 'npm'],
 ];
 
-// The package.json in `dir`, or undefined when there's none or it can't be read.
 export async function readPackageJson(dir: string): Promise<Record<string, unknown> | undefined> {
   try {
     const parsed: unknown = JSON.parse(await fs.readFile(path.join(dir, 'package.json'), 'utf8'));
