@@ -10,6 +10,9 @@ test('injectReloadScript goes before </body>, or at the end without one', () => 
   const page = injectReloadScript('<html><body><p>Hi</p></BODY></html>');
   assert.match(page, /<p>Hi<\/p><script>[\s\S]*EventSource[\s\S]*<\/script><\/BODY><\/html>$/);
   assert.match(injectReloadScript('<p>Hi</p>'), /^<p>Hi<\/p><script>[\s\S]*<\/script>$/);
+  // A "</body>" inside a script's string isn't the end of the page.
+  const scripted = injectReloadScript('<body><script>const end = "</body>";</script><p>Hi</p></body>');
+  assert.match(scripted, /^<body><script>const end = "<\/body>";<\/script><p>Hi<\/p><script>[\s\S]*EventSource[\s\S]*<\/script><\/body>$/);
 });
 
 test('resolveRequestPath stays inside the folder and skips hidden files', () => {
